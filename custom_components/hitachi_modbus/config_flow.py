@@ -1,10 +1,11 @@
 """Config flow for Hitachi ModBus Gateway integration.
 
 Step 1 – "user":   Enter gateway IP and Modbus slave ID.
-Step 2 – "units":  Confirm or refine the discovered units (Ou / Iu).
+Step 2 – "units":  Confirm discovered units (Ou / Iu).
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any
 
@@ -26,12 +27,18 @@ from .const import (
     DEFAULT_SCAN_INTERVAL,
     DEFAULT_SLAVE_ID,
     DOMAIN,
+    MAX_UNITS,
+    MODBUS_STRIDE,
+    OFFSET_EXIST,
+    OFFSET_SYS_ADDR,
+    OFFSET_UNIT_ADDR,
 )
-from .coordinator import HitachiModbusCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
-# ── Step 1 schema ──────────────────────────────────────────────────────────
+# TCP connection + per-register read timeout (seconds)
+_CONNECT_TIMEOUT = 10.0
+_READ_TIMEOUT = 5.0
 
 STEP_USER_SCHEMA = vol.Schema(
     {
@@ -52,7 +59,9 @@ class HitachiModbusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle the UI configuration flow for Hitachi ModBus Gateway."""
 
     VERSION = 1
-    _discovery_data: dict[str, Any] = {}
+
+    def __init__(self) -> None:
+        self._discovery_data: dict[str, Any] = {}
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
@@ -61,11 +70,9 @@ class HitachiModbusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         errors: dict[str, str] = {}
 
         if user_input is not None:
-            # Prevent duplicate entries for the same gateway IP
             await self.async_set_unique_id(user_input[CONF_HOST])
             self._abort_if_unique_id_configured()
 
-            # Try to connect and discover units
             discovered = await self._async_discover(user_input)
             if discovered is None:
                 errors["base"] = "cannot_connect"
@@ -82,10 +89,6 @@ class HitachiModbusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             step_id="user",
             data_schema=STEP_USER_SCHEMA,
             errors=errors,
-            description_placeholders={
-                "default_port": str(DEFAULT_PORT),
-                "default_slave": str(DEFAULT_SLAVE_ID),
-            },
         )
 
     async def async_step_units(
@@ -96,25 +99,21 @@ class HitachiModbusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         config: dict = self._discovery_data["config"]
 
         if user_input is not None:
-            # User confirmed – store config entry
             title = f"Hitachi HC-A ModBus ({config[CONF_HOST]})"
             return self.async_create_entry(
                 title=title,
                 data={**config, "discovered_units": units},
             )
 
-        # Build a read-only summary schema to display discovered units
         unit_lines = "\n".join(
-            f"Slot {u['slot_id']:2d} → Ou={u['ou']}, Iu={u['iu']}" for u in units
+            f"Slot {u['slot_id']:2d} → Ou={u['ou']}, Iu={u['iu']}"
+            for u in units
         )
-
         return self.async_show_form(
             step_id="units",
             data_schema=vol.Schema({}),
             description_placeholders={"unit_summary": unit_lines},
         )
-
-    # ── Options flow (re-configure scan interval) ──────────────────────────
 
     @staticmethod
     @callback
@@ -123,27 +122,113 @@ class HitachiModbusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     ) -> HitachiModbusOptionsFlow:
         return HitachiModbusOptionsFlow(config_entry)
 
-    # ── Internal helpers ───────────────────────────────────────────────────
+    # ── Discovery ──────────────────────────────────────────────────────────
 
     async def _async_discover(
         self, config: dict[str, Any]
     ) -> list[dict] | None:
-        """Connect to the gateway and return discovered unit list, or None on error."""
-        # Build a temporary coordinator just for discovery
-        from homeassistant.config_entries import ConfigEntry  # noqa: PLC0415
+        """Open a Modbus TCP connection and scan all 16 slots for indoor units.
 
-        class _FakeEntry:
-            data = config
+        Returns:
+            list[dict]  – found units (may be empty → "no_units_found")
+            None        – connection or protocol error → "cannot_connect"
+        """
+        from pymodbus.client import AsyncModbusTcpClient  # noqa: PLC0415
+        from pymodbus.exceptions import ModbusException  # noqa: PLC0415
 
-        coordinator = HitachiModbusCoordinator(self.hass, _FakeEntry())  # type: ignore[arg-type]
+        host: str = config[CONF_HOST]
+        port: int = config.get(CONF_PORT, DEFAULT_PORT)
+        slave: int = config.get(CONF_SLAVE_ID, DEFAULT_SLAVE_ID)
+        n_base: int = config.get(CONF_N_BASE, DEFAULT_N_BASE)
+
+        _LOGGER.debug(
+            "Hitachi discovery: connecting to %s:%d slave=%d n_base=%d",
+            host, port, slave, n_base,
+        )
+
+        client = AsyncModbusTcpClient(host=host, port=port, timeout=5)
+
         try:
-            units = await coordinator.async_discover_units()
+            # ── TCP connect ────────────────────────────────────────────────
+            try:
+                connected = await asyncio.wait_for(
+                    client.connect(), timeout=_CONNECT_TIMEOUT
+                )
+            except asyncio.TimeoutError:
+                _LOGGER.error(
+                    "Hitachi: TCP connection to %s:%d timed out after %gs",
+                    host, port, _CONNECT_TIMEOUT,
+                )
+                return None
+
+            if not connected:
+                _LOGGER.error(
+                    "Hitachi: TCP connect to %s:%d returned False", host, port
+                )
+                return None
+
+            _LOGGER.debug("Hitachi: TCP connected, scanning %d slots…", MAX_UNITS)
+
+            # ── Scan slots ─────────────────────────────────────────────────
+            units: list[dict] = []
+            gateway_responds = False  # set True on first valid Modbus response
+
+            for slot_id in range(MAX_UNITS):
+                base = n_base + slot_id * MODBUS_STRIDE
+                try:
+                    result = await asyncio.wait_for(
+                        client.read_holding_registers(
+                            address=base, count=3, slave=slave
+                        ),
+                        timeout=_READ_TIMEOUT,
+                    )
+                except asyncio.TimeoutError:
+                    _LOGGER.debug("Hitachi: slot %d read timed out", slot_id)
+                    if slot_id == 0:
+                        # Gateway not responding to Modbus at all – stop immediately
+                        _LOGGER.error(
+                            "Hitachi: gateway at %s:%d does not respond to Modbus "
+                            "(slave=%d, n_base=%d). "
+                            "Check slave ID and register base address.",
+                            host, port, slave, n_base,
+                        )
+                        return None
+                    continue
+                except ModbusException as exc:
+                    _LOGGER.debug("Hitachi: slot %d Modbus error: %s", slot_id, exc)
+                    continue
+
+                gateway_responds = True
+
+                if result.isError():
+                    _LOGGER.debug("Hitachi: slot %d returned Modbus error response", slot_id)
+                    continue
+
+                regs = result.registers
+                if not regs or len(regs) < 3:
+                    continue
+
+                if regs[OFFSET_EXIST] != 1:
+                    continue
+
+                ou = regs[OFFSET_SYS_ADDR]
+                iu = regs[OFFSET_UNIT_ADDR]
+                _LOGGER.debug(
+                    "Hitachi: slot %d → Ou=%d Iu=%d (EXIST=1)", slot_id, ou, iu
+                )
+                units.append({"slot_id": slot_id, "ou": ou, "iu": iu})
+
             return units
+
         except Exception as exc:  # noqa: BLE001
-            _LOGGER.error("Gateway discovery failed: %s", exc)
+            _LOGGER.error(
+                "Hitachi: unexpected error during discovery: %s",
+                exc,
+                exc_info=True,
+            )
             return None
         finally:
-            await coordinator.async_disconnect()
+            client.close()
 
 
 class HitachiModbusOptionsFlow(config_entries.OptionsFlow):
@@ -165,9 +250,9 @@ class HitachiModbusOptionsFlow(config_entries.OptionsFlow):
             step_id="init",
             data_schema=vol.Schema(
                 {
-                    vol.Optional(CONF_SCAN_INTERVAL, default=current_interval): vol.All(
-                        int, vol.Range(min=5, max=3600)
-                    )
+                    vol.Optional(
+                        CONF_SCAN_INTERVAL, default=current_interval
+                    ): vol.All(int, vol.Range(min=5, max=3600))
                 }
             ),
         )

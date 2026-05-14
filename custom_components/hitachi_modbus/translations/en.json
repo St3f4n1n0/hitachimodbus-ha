@@ -1,0 +1,72 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Hitachi ModBus Gateway – Connection",
+        "description": "Enter the network details for your HC-A(x)MB gateway.",
+        "data": {
+          "host": "Gateway IP address",
+          "port": "Modbus TCP port (default 502)",
+          "slave_id": "Modbus slave ID (default 1)",
+          "n_base": "Register base address (2000 or 20000)",
+          "scan_interval": "Polling interval (seconds)"
+        }
+      },
+      "units": {
+        "title": "Discovered indoor units",
+        "description": "The following indoor units were found on the gateway:\n\n{unit_summary}\n\nClick Submit to add them all to Home Assistant."
+      }
+    },
+    "error": {
+      "cannot_connect": "Cannot connect to the gateway. Check the IP address and Modbus slave ID.",
+      "no_units_found": "Connected to the gateway but no indoor units were detected. Make sure the units are powered on and correctly configured in the gateway."
+    },
+    "abort": {
+      "already_configured": "This gateway is already configured."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Hitachi ModBus – Options",
+        "data": {
+          "scan_interval": "Polling interval (seconds)"
+        }
+      }
+    }
+  },
+  "services": {
+    "read_register": {
+      "name": "Read Modbus register",
+      "description": "Read a single Modbus register from the gateway.",
+      "fields": {
+        "entry_id": {
+          "name": "Config entry ID",
+          "description": "The entry_id of the Hitachi ModBus config entry."
+        },
+        "address": {
+          "name": "Register address",
+          "description": "Modbus holding register address (decimal or 0x hex)."
+        }
+      }
+    },
+    "write_register": {
+      "name": "Write Modbus register",
+      "description": "Write a value to a single Modbus register on the gateway.",
+      "fields": {
+        "entry_id": {
+          "name": "Config entry ID",
+          "description": "The entry_id of the Hitachi ModBus config entry."
+        },
+        "address": {
+          "name": "Register address",
+          "description": "Modbus holding register address (decimal or 0x hex)."
+        },
+        "value": {
+          "name": "Value",
+          "description": "16-bit unsigned value to write (0–65535)."
+        }
+      }
+    }
+  }
+}

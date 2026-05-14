@@ -1,0 +1,38 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Gateway Hitachi ModBus – Connessione",
+        "description": "Inserisci i dati di rete del tuo gateway HC-A(x)MB.",
+        "data": {
+          "host": "Indirizzo IP del gateway",
+          "port": "Porta Modbus TCP (default 502)",
+          "slave_id": "Modbus slave ID (default 1)",
+          "n_base": "Indirizzo base registri (2000 o 20000)",
+          "scan_interval": "Intervallo di polling (secondi)"
+        }
+      },
+      "units": {
+        "title": "Unità interne rilevate",
+        "description": "Le seguenti unità interne sono state trovate sul gateway:\n\n{unit_summary}\n\nClicca Invia per aggiungerle tutte a Home Assistant."
+      }
+    },
+    "error": {
+      "cannot_connect": "Impossibile connettersi al gateway. Verifica l'indirizzo IP e lo slave ID Modbus.",
+      "no_units_found": "Connessione al gateway riuscita, ma non sono state trovate unità interne. Assicurati che le unità siano accese e configurate correttamente nel gateway."
+    },
+    "abort": {
+      "already_configured": "Questo gateway è già configurato."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Hitachi ModBus – Opzioni",
+        "data": {
+          "scan_interval": "Intervallo di polling (secondi)"
+        }
+      }
+    }
+  }
+}

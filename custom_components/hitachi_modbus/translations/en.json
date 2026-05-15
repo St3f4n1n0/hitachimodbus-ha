@@ -19,7 +19,24 @@
       "unit_types": {
         "title": "Unit type selection",
         "description": "Select the type for each indoor unit.\n\n{unit_summary}\n\n**VRF** – Variable Refrigerant Flow (multi-split system)\n**RAC** – Room Air Conditioner (single-split wall unit)\n**ATW** – Air to Water (hydronic heat pump)\n\nThe type determines which modes, fan speeds and temperature range are available.",
-        "data": {}
+        "data": {
+          "type_slot_0":  "Slot 0 type (default: vrf)",
+          "type_slot_1":  "Slot 1 type (default: vrf)",
+          "type_slot_2":  "Slot 2 type (default: vrf)",
+          "type_slot_3":  "Slot 3 type (default: vrf)",
+          "type_slot_4":  "Slot 4 type (default: vrf)",
+          "type_slot_5":  "Slot 5 type (default: vrf)",
+          "type_slot_6":  "Slot 6 type (default: vrf)",
+          "type_slot_7":  "Slot 7 type (default: vrf)",
+          "type_slot_8":  "Slot 8 type (default: vrf)",
+          "type_slot_9":  "Slot 9 type (default: vrf)",
+          "type_slot_10": "Slot 10 type (default: vrf)",
+          "type_slot_11": "Slot 11 type (default: vrf)",
+          "type_slot_12": "Slot 12 type (default: vrf)",
+          "type_slot_13": "Slot 13 type (default: vrf)",
+          "type_slot_14": "Slot 14 type (default: vrf)",
+          "type_slot_15": "Slot 15 type (default: vrf)"
+        }
       }
     },
     "error": {

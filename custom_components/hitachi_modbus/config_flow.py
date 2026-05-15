@@ -177,9 +177,8 @@ class HitachiModbusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 base = n_base + slot_id * MODBUS_STRIDE
                 try:
                     result = await asyncio.wait_for(
-                        client.read_holding_registers(
-                            address=base, count=3, slave=slave
-                        ),
+                        # positional args: pymodbus ≥3.8 made 'slave' positional-only
+                        client.read_holding_registers(base, 3, slave),
                         timeout=_READ_TIMEOUT,
                     )
                 except asyncio.TimeoutError:

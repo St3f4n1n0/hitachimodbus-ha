@@ -22,9 +22,7 @@ from .const import (
     DEFAULT_SCAN_INTERVAL,
     DEFAULT_SLAVE_ID,
     DOMAIN,
-    GATEWAY_REG_FIRMWARE,
     GATEWAY_REG_TYPE,
-    GATEWAY_REG_UNITS_TABLE,
     MAX_UNITS,
     MODBUS_STRIDE,
     OFFSET_EXIST,
@@ -49,6 +47,20 @@ def _parse_temp(val: int) -> float | None:
     return float(signed)
 
 
+async def _read_regs(client: AsyncModbusTcpClient, address: int, count: int, slave: int):
+    """Read holding registers using positional args for pymodbus compatibility.
+
+    pymodbus ≥ 3.8 made 'slave' positional-only; passing it as a keyword
+    raises TypeError. Using positional args works across all 3.x versions.
+    """
+    return await client.read_holding_registers(address, count, slave)
+
+
+async def _write_reg(client: AsyncModbusTcpClient, address: int, value: int, slave: int):
+    """Write a single holding register using positional args."""
+    return await client.write_register(address, value, slave)
+
+
 class HitachiModbusCoordinator(DataUpdateCoordinator[dict[int, list[int]]]):
     """Polls the HC-A(x)MB gateway and caches per-slot register blocks."""
 
@@ -58,8 +70,6 @@ class HitachiModbusCoordinator(DataUpdateCoordinator[dict[int, list[int]]]):
         self._slave = entry.data.get(CONF_SLAVE_ID, DEFAULT_SLAVE_ID)
         self._n_base = entry.data.get(CONF_N_BASE, DEFAULT_N_BASE)
         self._client: AsyncModbusTcpClient | None = None
-        # slot_id → list of MODBUS_STRIDE register values
-        self.active_slots: dict[int, dict] = {}
 
         super().__init__(
             hass,
@@ -76,7 +86,9 @@ class HitachiModbusCoordinator(DataUpdateCoordinator[dict[int, list[int]]]):
         self._client = AsyncModbusTcpClient(host=self._host, port=self._port)
         connected = await self._client.connect()
         if not connected:
-            _LOGGER.error("Cannot connect to Hitachi gateway at %s:%s", self._host, self._port)
+            _LOGGER.error(
+                "Cannot connect to Hitachi gateway at %s:%s", self._host, self._port
+            )
         return connected
 
     async def async_disconnect(self) -> None:
@@ -91,60 +103,25 @@ class HitachiModbusCoordinator(DataUpdateCoordinator[dict[int, list[int]]]):
         if not await self._ensure_connected():
             return {}
         try:
-            result = await self._client.read_holding_registers(
-                address=GATEWAY_REG_TYPE, count=2, slave=self._slave
-            )
+            result = await _read_regs(self._client, GATEWAY_REG_TYPE, 2, self._slave)
             if result.isError():
                 return {}
-            device_type = result.registers[0]
-            firmware = result.registers[1]
-            return {"device_type": device_type, "firmware": firmware}
+            return {
+                "device_type": result.registers[0],
+                "firmware": result.registers[1],
+            }
         except ModbusException as exc:
             _LOGGER.warning("Error reading gateway info: %s", exc)
             return {}
 
-    async def async_discover_units(self) -> list[dict]:
-        """Scan all 16 slots and return a list of configured units.
-
-        Each entry: {"slot_id": int, "ou": int, "iu": int}
-        """
-        if not await self._ensure_connected():
-            return []
-
-        units: list[dict] = []
-        for slot_id in range(MAX_UNITS):
-            base = self._n_base + slot_id * MODBUS_STRIDE
-            try:
-                result = await self._client.read_holding_registers(
-                    address=base, count=3, slave=self._slave
-                )
-                if result.isError() or not result.registers:
-                    continue
-                regs = result.registers
-                if regs[OFFSET_EXIST] != 1:
-                    continue
-                units.append(
-                    {
-                        "slot_id": slot_id,
-                        "ou": regs[OFFSET_SYS_ADDR],
-                        "iu": regs[OFFSET_UNIT_ADDR],
-                    }
-                )
-            except ModbusException as exc:
-                _LOGGER.debug("Slot %d read error during discovery: %s", slot_id, exc)
-
-        return units
-
     # ── Register read/write services ───────────────────────────────────────
 
     async def async_read_register(self, address: int) -> int | None:
-        """Read a single raw Modbus register (for the 'Registers' service)."""
+        """Read a single raw Modbus register (exposed as HA service)."""
         if not await self._ensure_connected():
             return None
         try:
-            result = await self._client.read_holding_registers(
-                address=address, count=1, slave=self._slave
-            )
+            result = await _read_regs(self._client, address, 1, self._slave)
             if result.isError():
                 return None
             return result.registers[0]
@@ -153,19 +130,19 @@ class HitachiModbusCoordinator(DataUpdateCoordinator[dict[int, list[int]]]):
             return None
 
     async def async_write_register(self, address: int, value: int) -> bool:
-        """Write a single raw Modbus register (for the 'Registers' service)."""
+        """Write a single raw Modbus register (exposed as HA service)."""
         if not await self._ensure_connected():
             return False
         try:
-            result = await self._client.write_register(
-                address=address, value=value, slave=self._slave
-            )
+            result = await _write_reg(self._client, address, value, self._slave)
             return not result.isError()
         except ModbusException as exc:
-            _LOGGER.error("Write register 0x%04X = %d failed: %s", address, value, exc)
+            _LOGGER.error(
+                "Write register 0x%04X = %d failed: %s", address, value, exc
+            )
             return False
 
-    # ── Unit-level register helpers ────────────────────────────────────────
+    # ── Unit-level helpers ─────────────────────────────────────────────────
 
     def _unit_base(self, slot_id: int) -> int:
         return self._n_base + slot_id * MODBUS_STRIDE
@@ -174,8 +151,9 @@ class HitachiModbusCoordinator(DataUpdateCoordinator[dict[int, list[int]]]):
         self, slot_id: int, offset: int, value: int
     ) -> bool:
         """Write one register for a specific indoor unit slot."""
-        address = self._unit_base(slot_id) + offset
-        return await self.async_write_register(address, value)
+        return await self.async_write_register(
+            self._unit_base(slot_id) + offset, value
+        )
 
     # ── DataUpdateCoordinator update ───────────────────────────────────────
 
@@ -189,8 +167,8 @@ class HitachiModbusCoordinator(DataUpdateCoordinator[dict[int, list[int]]]):
         for slot_id in range(MAX_UNITS):
             base = self._unit_base(slot_id)
             try:
-                result = await self._client.read_holding_registers(
-                    address=base, count=MODBUS_STRIDE, slave=self._slave
+                result = await _read_regs(
+                    self._client, base, MODBUS_STRIDE, self._slave
                 )
                 if result.isError() or not result.registers:
                     continue
@@ -210,9 +188,8 @@ class HitachiModbusCoordinator(DataUpdateCoordinator[dict[int, list[int]]]):
             return await self._async_connect()
         return True
 
-    # ── Register value helpers (used by climate entity) ────────────────────
+    # ── Helpers used by climate entity ─────────────────────────────────────
 
     @staticmethod
     def get_signed_temp(regs: list[int], offset: int) -> float | None:
-        """Extract a signed temperature value from a register block."""
         return _parse_temp(regs[offset])

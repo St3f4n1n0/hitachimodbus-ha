@@ -1,0 +1,53 @@
+read_register:
+  name: Read Modbus register
+  description: Read a single Modbus holding register from the Hitachi gateway and display the value as a persistent notification.
+  fields:
+    entry_id:
+      name: Config entry ID
+      description: The entry_id of the Hitachi ModBus Gateway config entry (visible in Settings → Devices & Services → Integration → entry URL).
+      required: true
+      example: "01KRNGGF6WXMHY431NJA6X64EJ"
+      selector:
+        text:
+    address:
+      name: Register address
+      description: Modbus holding register address (decimal). Example – 2000 = slot 0 base, 20000 = legacy base.
+      required: true
+      example: 2000
+      selector:
+        number:
+          min: 0
+          max: 65535
+          mode: box
+
+write_register:
+  name: Write Modbus register
+  description: Write a 16-bit value to a single Modbus holding register on the Hitachi gateway.
+  fields:
+    entry_id:
+      name: Config entry ID
+      description: The entry_id of the Hitachi ModBus Gateway config entry.
+      required: true
+      example: "01KRNGGF6WXMHY431NJA6X64EJ"
+      selector:
+        text:
+    address:
+      name: Register address
+      description: Modbus holding register address (decimal).
+      required: true
+      example: 2003
+      selector:
+        number:
+          min: 0
+          max: 65535
+          mode: box
+    value:
+      name: Value
+      description: 16-bit unsigned value to write (0–65535).
+      required: true
+      example: 1
+      selector:
+        number:
+          min: 0
+          max: 65535
+          mode: box

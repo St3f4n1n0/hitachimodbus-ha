@@ -12,11 +12,13 @@ from homeassistant.components.climate import (
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import UnitOfTemperature
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import (
+    CONF_HOST,
     DOMAIN,
     FAN_MODES,
     HA_FAN_TO_MODBUS,
@@ -58,8 +60,18 @@ async def async_setup_entry(
     entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    """Create one ClimateEntity per discovered indoor unit slot."""
+    """Create the gateway device and one ClimateEntity per discovered indoor unit."""
     coordinator: HitachiModbusCoordinator = hass.data[DOMAIN][entry.entry_id]
+
+    # Register the gateway as a parent device so indoor units can reference it
+    dev_reg = dr.async_get(hass)
+    dev_reg.async_get_or_create(
+        config_entry_id=entry.entry_id,
+        identifiers={(DOMAIN, entry.entry_id)},
+        manufacturer="Hitachi",
+        model="HC-A16MB",
+        name=f"Hitachi HC-A ModBus Gateway ({entry.data.get(CONF_HOST, '')})",
+    )
 
     units: list[dict] = entry.data.get("discovered_units", [])
     if not units:

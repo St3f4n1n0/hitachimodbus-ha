@@ -130,8 +130,12 @@ ATW_OFFSET_MODE_CMD          = 51   # 0=Cool, 1=Heat
 ATW_OFFSET_CIRCUIT1_RUN_CMD  = 52
 ATW_OFFSET_HEAT_SETTEMP_CMD  = 55   # Circuit 1 water heating fix setpoint °C (0-80)
 ATW_OFFSET_COOL_SETTEMP_CMD  = 56   # Circuit 1 water cooling fix setpoint °C (0-80)
-ATW_OFFSET_DHWT_RUN_CMD      = 74   # 0=Stop, 1=Run
+ATW_OFFSET_DHWT_RUN_CMD       = 74   # 0=Stop, 1=Run
 ATW_OFFSET_DHWT_SETTEMP_CMD  = 75   # DHW target temperature °C (0-80)
+ATW_OFFSET_DHW_BOOST_CMD     = 76   # 0=No request, 1=Request
+ATW_OFFSET_DHW_DEMAND_CMD    = 78   # 0=Standard, 1=High demand
+ATW_OFFSET_ANTILEG_RUN_CMD   = 81   # 0=Stop, 1=Run
+ATW_OFFSET_ANTILEG_SETTEMP_CMD = 82 # AntiLegionella setting temperature °C (0-80)
 
 # ATW status offsets (Read-only), §5.2.2 ATW column
 ATW_OFFSET_ONOFF_STATUS      = 100  # 0=Stop, 1=Run
@@ -139,9 +143,13 @@ ATW_OFFSET_MODE_STATUS       = 101  # B0=0:Cool/1:Heat  B1=0:Normal/1:Auto
 ATW_OFFSET_CIRCUIT1_STATUS   = 102  # Circuit 1 Run/Stop
 ATW_OFFSET_HEAT_SETTEMP_ST   = 105  # Circuit 1 water heating fix setpoint status
 ATW_OFFSET_COOL_SETTEMP_ST   = 106  # Circuit 1 water cooling fix setpoint status
-ATW_OFFSET_DHWT_STATUS       = 126  # DHWT Run/Stop
+ATW_OFFSET_DHWT_STATUS        = 126  # DHWT Run/Stop
 ATW_OFFSET_DHWT_SETTEMP_ST   = 127  # DHWT Setting Temperature status
+ATW_OFFSET_DHW_BOOST_STATUS  = 128  # 0=Disable, 1=Enable
+ATW_OFFSET_DHW_DEMAND_STATUS = 130  # 0=Standard, 1=High demand
 ATW_OFFSET_DHW_TEMP          = 131  # DHW Temperature (-80~100 °C)
+ATW_OFFSET_ANTILEG_STATUS    = 135  # AntiLegionella Run/Stop status
+ATW_OFFSET_ANTILEG_SETTEMP_ST = 136 # AntiLegionella Setting Temperature status
 ATW_OFFSET_SYS_CONFIG        = 140  # System Configuration bitmask
 ATW_OFFSET_OP_STATE          = 141  # 0=OFF…11=Alarm
 ATW_OFFSET_OUTDOOR_TEMP      = 142  # Outdoor Ambient T° (-80~100)

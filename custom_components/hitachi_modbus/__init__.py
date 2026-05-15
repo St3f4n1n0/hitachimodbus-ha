@@ -14,7 +14,7 @@ from .coordinator import HitachiModbusCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORMS = [Platform.CLIMATE]
+PLATFORMS = [Platform.CLIMATE, Platform.SWITCH, Platform.NUMBER]
 
 # ── Service schemas ────────────────────────────────────────────────────────
 

@@ -130,6 +130,8 @@ ATW_OFFSET_MODE_CMD          = 51   # 0=Cool, 1=Heat
 ATW_OFFSET_CIRCUIT1_RUN_CMD  = 52
 ATW_OFFSET_HEAT_SETTEMP_CMD  = 55   # Circuit 1 water heating fix setpoint °C (0-80)
 ATW_OFFSET_COOL_SETTEMP_CMD  = 56   # Circuit 1 water cooling fix setpoint °C (0-80)
+ATW_OFFSET_HEAT_ECO_OFFSET_CMD = 58 # Circuit 1 Heat ECO Offset Temperature (1-10)
+ATW_OFFSET_COOL_ECO_OFFSET_CMD = 59 # Circuit 1 Cool ECO Offset Temperature (1-10)
 ATW_OFFSET_DHWT_RUN_CMD       = 74   # 0=Stop, 1=Run
 ATW_OFFSET_DHWT_SETTEMP_CMD  = 75   # DHW target temperature °C (0-80)
 ATW_OFFSET_DHW_BOOST_CMD     = 76   # 0=No request, 1=Request
@@ -143,6 +145,8 @@ ATW_OFFSET_MODE_STATUS       = 101  # B0=0:Cool/1:Heat  B1=0:Normal/1:Auto
 ATW_OFFSET_CIRCUIT1_STATUS   = 102  # Circuit 1 Run/Stop
 ATW_OFFSET_HEAT_SETTEMP_ST   = 105  # Circuit 1 water heating fix setpoint status
 ATW_OFFSET_COOL_SETTEMP_ST   = 106  # Circuit 1 water cooling fix setpoint status
+ATW_OFFSET_HEAT_ECO_OFFSET_ST = 108 # Circuit 1 Heat ECO Offset Temperature status
+ATW_OFFSET_COOL_ECO_OFFSET_ST = 109 # Circuit 1 Cool ECO Offset Temperature status
 ATW_OFFSET_DHWT_STATUS        = 126  # DHWT Run/Stop
 ATW_OFFSET_DHWT_SETTEMP_ST   = 127  # DHWT Setting Temperature status
 ATW_OFFSET_DHW_BOOST_STATUS  = 128  # 0=Disable, 1=Enable

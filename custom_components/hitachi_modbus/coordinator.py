@@ -14,6 +14,10 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .const import (
+    ATW_N_BASE,
+    ATW_READ_COUNT,
+    ATW_READ_START,
+    ATW_STRIDE,
     CONF_HOST,
     CONF_N_BASE,
     CONF_PORT,
@@ -28,9 +32,8 @@ from .const import (
     MAX_UNITS,
     MODBUS_STRIDE,
     OFFSET_EXIST,
-    OFFSET_SYS_ADDR,
-    OFFSET_UNIT_ADDR,
     TEMP_NOT_AVAILABLE,
+    UNIT_TYPE_ATW,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -49,16 +52,24 @@ def _parse_temp(val: int) -> float | None:
     return float(signed)
 
 
-
-
 class HitachiModbusCoordinator(DataUpdateCoordinator[dict[int, list[int]]]):
-    """Polls the HC-A(x)MB gateway and caches per-slot register blocks."""
+    """Polls the HC-A(x)MB gateway and caches per-slot register blocks.
 
-    def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
+    VRF/RAC slots: §5.2.1 block  → N_BASE + slot*32 + offset  (32 regs)
+    ATW slots:     §5.2.2 block  → 5000 + slot*200 + offset   (118 regs, offsets 50-167)
+    """
+
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        entry: ConfigEntry,
+        unit_types: dict[int, str],
+    ) -> None:
         self._host = entry.data[CONF_HOST]
         self._port = entry.data.get(CONF_PORT, DEFAULT_PORT)
         self._slave = entry.data.get(CONF_SLAVE_ID, DEFAULT_SLAVE_ID)
         self._n_base = entry.data.get(CONF_N_BASE, DEFAULT_N_BASE)
+        self._unit_types: dict[int, str] = unit_types
         self._client: AsyncModbusTcpClient | None = None
 
         super().__init__(
@@ -134,16 +145,26 @@ class HitachiModbusCoordinator(DataUpdateCoordinator[dict[int, list[int]]]):
 
     # ── Unit-level helpers ─────────────────────────────────────────────────
 
-    def _unit_base(self, slot_id: int) -> int:
+    def _unit_base_521(self, slot_id: int) -> int:
+        """§5.2.1 base address (VRF/RAC)."""
         return self._n_base + slot_id * MODBUS_STRIDE
+
+    def _unit_base_522(self, slot_id: int, offset: int = 0) -> int:
+        """§5.2.2 absolute address for ATW (5000 + slot*200 + offset)."""
+        return ATW_N_BASE + slot_id * ATW_STRIDE + offset
 
     async def async_write_unit_register(
         self, slot_id: int, offset: int, value: int
     ) -> bool:
-        """Write one register for a specific indoor unit slot."""
-        return await self.async_write_register(
-            self._unit_base(slot_id) + offset, value
-        )
+        """Write one register for a specific indoor unit slot.
+
+        Automatically selects §5.2.1 (VRF/RAC) or §5.2.2 (ATW) addressing.
+        """
+        if self._unit_types.get(slot_id) == UNIT_TYPE_ATW:
+            address = self._unit_base_522(slot_id, offset)
+        else:
+            address = self._unit_base_521(slot_id) + offset
+        return await self.async_write_register(address, value)
 
     # ── DataUpdateCoordinator update ───────────────────────────────────────
 
@@ -154,18 +175,32 @@ class HitachiModbusCoordinator(DataUpdateCoordinator[dict[int, list[int]]]):
             )
 
         data: dict[int, list[int]] = {}
+
         for slot_id in range(MAX_UNITS):
-            base = self._unit_base(slot_id)
+            unit_type = self._unit_types.get(slot_id)
+
+            if unit_type == UNIT_TYPE_ATW:
+                # §5.2.2: read offsets 50-167 from ATW address space
+                base = self._unit_base_522(slot_id, ATW_READ_START)
+                count = ATW_READ_COUNT
+            else:
+                # §5.2.1: read 32 registers (VRF/RAC or unknown slot check)
+                base = self._unit_base_521(slot_id)
+                count = MODBUS_STRIDE
+
             try:
-                result = await modbus_read(
-                    self._client, base, MODBUS_STRIDE, self._slave
-                )
+                result = await modbus_read(self._client, base, count, self._slave)
                 if result.isError() or not result.registers:
                     continue
                 regs = result.registers
-                if regs[OFFSET_EXIST] != 1:
-                    continue
+
+                if unit_type != UNIT_TYPE_ATW:
+                    # VRF/RAC: gate on EXIST flag so unknown slots are ignored
+                    if regs[OFFSET_EXIST] != 1:
+                        continue
+
                 data[slot_id] = regs
+
             except ModbusException as exc:
                 _LOGGER.warning("ModBus error polling slot %d: %s", slot_id, exc)
 

@@ -9,7 +9,7 @@ from homeassistant.core import HomeAssistant, ServiceCall
 import homeassistant.helpers.config_validation as cv
 import voluptuous as vol
 
-from .const import DOMAIN
+from .const import DOMAIN, UNIT_TYPE_VRF
 from .coordinator import HitachiModbusCoordinator
 
 _LOGGER = logging.getLogger(__name__)
@@ -39,7 +39,9 @@ SERVICE_WRITE_SCHEMA = vol.Schema(
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Hitachi ModBus from a config entry."""
-    coordinator = HitachiModbusCoordinator(hass, entry)
+    units = entry.data.get("discovered_units", [])
+    unit_types = {u["slot_id"]: u.get("unit_type", UNIT_TYPE_VRF) for u in units}
+    coordinator = HitachiModbusCoordinator(hass, entry, unit_types)
 
     # Fetch initial data
     await coordinator.async_config_entry_first_refresh()

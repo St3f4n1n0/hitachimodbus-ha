@@ -18,6 +18,26 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import (
+    ATW_OFFSET_ALARM,
+    ATW_OFFSET_CIRCUIT1_STATUS,
+    ATW_OFFSET_COOL_SETTEMP_CMD,
+    ATW_OFFSET_COOL_SETTEMP_ST,
+    ATW_OFFSET_DHW_TEMP,
+    ATW_OFFSET_DHWT_SETTEMP_CMD,
+    ATW_OFFSET_DHWT_SETTEMP_ST,
+    ATW_OFFSET_DHWT_STATUS,
+    ATW_OFFSET_HEAT_SETTEMP_CMD,
+    ATW_OFFSET_HEAT_SETTEMP_ST,
+    ATW_OFFSET_MODE_CMD,
+    ATW_OFFSET_MODE_STATUS,
+    ATW_OFFSET_ONOFF_CMD,
+    ATW_OFFSET_ONOFF_STATUS,
+    ATW_OFFSET_OP_STATE,
+    ATW_OFFSET_OUTDOOR_TEMP,
+    ATW_OFFSET_SYS_STATUS2,
+    ATW_OFFSET_WATER_INLET_TEMP,
+    ATW_OFFSET_WATER_OUTLET_TEMP,
+    ATW_READ_START,
     CONF_HOST,
     DOMAIN,
     FAN_MODES_BY_TYPE,
@@ -49,7 +69,6 @@ from .coordinator import HitachiModbusCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
-# HVACMode string → HA enum
 _STR_TO_HVAC: dict[str, HVACMode] = {
     "off":       HVACMode.OFF,
     "cool":      HVACMode.COOL,
@@ -60,16 +79,22 @@ _STR_TO_HVAC: dict[str, HVACMode] = {
 }
 _HVAC_TO_STR: dict[HVACMode, str] = {v: k for k, v in _STR_TO_HVAC.items()}
 
+_ATW_OP_STATE: dict[int, str] = {
+    0: "off",
+    1: "cool_demand_off",  2: "cool_thermo_off",  3: "cool_thermo_on",
+    4: "heat_demand_off",  5: "heat_thermo_off",  6: "heat_thermo_on",
+    7: "dhw_off",          8: "dhw_on",
+    9: "swp_off",         10: "swp_on",           11: "alarm",
+}
+
 
 async def async_setup_entry(
     hass: HomeAssistant,
     entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    """Register the gateway device then create one ClimateEntity per unit."""
     coordinator: HitachiModbusCoordinator = hass.data[DOMAIN][entry.entry_id]
 
-    # Register the gateway itself so indoor units can reference it via via_device
     dev_reg = dr.async_get(hass)
     dev_reg.async_get_or_create(
         config_entry_id=entry.entry_id,
@@ -116,7 +141,6 @@ class HitachiClimateEntity(CoordinatorEntity[HitachiModbusCoordinator], ClimateE
         self._attr_unique_id = f"{entry.entry_id}_slot{slot_id}"
         self._attr_name = f"Ou{ou} Iu{iu}"
 
-        # ── Type-specific static configuration ────────────────────────────
         hvac_strs = HVAC_MODES_BY_TYPE[unit_type]
         self._attr_hvac_modes = [_STR_TO_HVAC[m] for m in hvac_strs]
 
@@ -154,10 +178,25 @@ class HitachiClimateEntity(CoordinatorEntity[HitachiModbusCoordinator], ClimateE
         return self.coordinator.data.get(self._slot_id)
 
     def _reg(self, offset: int) -> int | None:
+        """§5.2.1 register for VRF/RAC (index = offset directly)."""
         regs = self._regs
         if regs is None or offset >= len(regs):
             return None
         return regs[offset]
+
+    def _atw_reg(self, offset: int) -> int | None:
+        """§5.2.2 ATW register (index = offset - ATW_READ_START)."""
+        regs = self._regs
+        if regs is None:
+            return None
+        idx = offset - ATW_READ_START
+        if idx < 0 or idx >= len(regs):
+            return None
+        return regs[idx]
+
+    @staticmethod
+    def _signed(val: int) -> int:
+        return val if val < 0x8000 else val - 0x10000
 
     # ── State ──────────────────────────────────────────────────────────────
 
@@ -167,6 +206,18 @@ class HitachiClimateEntity(CoordinatorEntity[HitachiModbusCoordinator], ClimateE
 
     @property
     def hvac_mode(self) -> HVACMode | None:
+        if self._unit_type == UNIT_TYPE_ATW:
+            on_off = self._atw_reg(ATW_OFFSET_ONOFF_STATUS)
+            if on_off is None:
+                return None
+            if on_off == 0:
+                return HVACMode.OFF
+            mode_val = self._atw_reg(ATW_OFFSET_MODE_STATUS)
+            if mode_val is None:
+                return HVACMode.OFF
+            return HVACMode.HEAT if (mode_val & 0x01) else HVACMode.COOL
+
+        # VRF / RAC
         on_off = self._reg(OFFSET_ONOFF_STATUS)
         if on_off is None:
             return None
@@ -189,6 +240,13 @@ class HitachiClimateEntity(CoordinatorEntity[HitachiModbusCoordinator], ClimateE
 
     @property
     def current_temperature(self) -> float | None:
+        if self._unit_type == UNIT_TYPE_ATW:
+            val = self._atw_reg(ATW_OFFSET_WATER_INLET_TEMP)
+            if val is None:
+                return None
+            signed = self._signed(val)
+            return float(signed) if abs(signed) < 200 else None
+
         regs = self._regs
         if regs is None:
             return None
@@ -196,12 +254,42 @@ class HitachiClimateEntity(CoordinatorEntity[HitachiModbusCoordinator], ClimateE
 
     @property
     def target_temperature(self) -> float | None:
+        if self._unit_type == UNIT_TYPE_ATW:
+            mode_val = self._atw_reg(ATW_OFFSET_MODE_STATUS)
+            is_heat = mode_val is not None and bool(mode_val & 0x01)
+            offset = ATW_OFFSET_HEAT_SETTEMP_ST if is_heat else ATW_OFFSET_COOL_SETTEMP_ST
+            val = self._atw_reg(offset)
+            return float(val) if val is not None else None
+
         val = self._reg(OFFSET_TEMP_STATUS)
         return float(val) if val is not None else None
 
     # ── Control ────────────────────────────────────────────────────────────
 
     async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
+        if self._unit_type == UNIT_TYPE_ATW:
+            if hvac_mode == HVACMode.OFF:
+                await self.coordinator.async_write_unit_register(
+                    self._slot_id, ATW_OFFSET_ONOFF_CMD, 0
+                )
+            elif hvac_mode == HVACMode.HEAT:
+                await self.coordinator.async_write_unit_register(
+                    self._slot_id, ATW_OFFSET_ONOFF_CMD, 1
+                )
+                await self.coordinator.async_write_unit_register(
+                    self._slot_id, ATW_OFFSET_MODE_CMD, 1
+                )
+            elif hvac_mode == HVACMode.COOL:
+                await self.coordinator.async_write_unit_register(
+                    self._slot_id, ATW_OFFSET_ONOFF_CMD, 1
+                )
+                await self.coordinator.async_write_unit_register(
+                    self._slot_id, ATW_OFFSET_MODE_CMD, 0
+                )
+            await self.coordinator.async_request_refresh()
+            return
+
+        # VRF / RAC
         if hvac_mode == HVACMode.OFF:
             await self.coordinator.async_write_unit_register(
                 self._slot_id, OFFSET_ONOFF_CMD, 0
@@ -230,9 +318,18 @@ class HitachiClimateEntity(CoordinatorEntity[HitachiModbusCoordinator], ClimateE
         temp = kwargs.get("temperature")
         if temp is None:
             return
-        await self.coordinator.async_write_unit_register(
-            self._slot_id, OFFSET_TEMP_CMD, int(temp)
-        )
+
+        if self._unit_type == UNIT_TYPE_ATW:
+            mode_val = self._atw_reg(ATW_OFFSET_MODE_STATUS)
+            is_heat = mode_val is not None and bool(mode_val & 0x01)
+            offset = ATW_OFFSET_HEAT_SETTEMP_CMD if is_heat else ATW_OFFSET_COOL_SETTEMP_CMD
+            await self.coordinator.async_write_unit_register(
+                self._slot_id, offset, int(temp)
+            )
+        else:
+            await self.coordinator.async_write_unit_register(
+                self._slot_id, OFFSET_TEMP_CMD, int(temp)
+            )
         await self.coordinator.async_request_refresh()
 
     # ── Extra attributes ───────────────────────────────────────────────────
@@ -244,12 +341,48 @@ class HitachiClimateEntity(CoordinatorEntity[HitachiModbusCoordinator], ClimateE
             return {}
 
         attrs: dict[str, Any] = {
-            "slot_id": self._slot_id,
+            "slot_id":   self._slot_id,
             "unit_type": self._unit_type,
-            "ou": self._ou,
-            "iu": self._iu,
+            "ou":        self._ou,
+            "iu":        self._iu,
         }
 
+        if self._unit_type == UNIT_TYPE_ATW:
+            for name, offset in (
+                ("water_inlet_temperature",     ATW_OFFSET_WATER_INLET_TEMP),
+                ("water_outlet_temperature",    ATW_OFFSET_WATER_OUTLET_TEMP),
+                ("outdoor_ambient_temperature", ATW_OFFSET_OUTDOOR_TEMP),
+                ("dhw_temperature",             ATW_OFFSET_DHW_TEMP),
+            ):
+                val = self._atw_reg(offset)
+                if val is not None:
+                    signed = self._signed(val)
+                    if abs(signed) < 200:
+                        attrs[name] = float(signed)
+
+            op = self._atw_reg(ATW_OFFSET_OP_STATE)
+            if op is not None:
+                attrs["operation_state"] = _ATW_OP_STATE.get(op, str(op))
+
+            sys2 = self._atw_reg(ATW_OFFSET_SYS_STATUS2)
+            if sys2 is not None:
+                attrs["defrosting"]    = bool(sys2 & 0x0001)
+                attrs["compressor_on"] = bool(sys2 & 0x0020)
+
+            dhwt_run = self._atw_reg(ATW_OFFSET_DHWT_STATUS)
+            if dhwt_run is not None:
+                attrs["dhwt_running"] = bool(dhwt_run)
+            dhwt_sp = self._atw_reg(ATW_OFFSET_DHWT_SETTEMP_ST)
+            if dhwt_sp is not None:
+                attrs["dhwt_setpoint"] = float(dhwt_sp)
+
+            alarm = self._atw_reg(ATW_OFFSET_ALARM)
+            if alarm is not None:
+                attrs["alarm_code"] = alarm
+
+            return attrs
+
+        # VRF / RAC
         for name, offset in (
             ("inlet_temperature",        OFFSET_INLET_TEMP),
             ("outlet_temperature",       OFFSET_OUTLET_TEMP),

@@ -14,7 +14,12 @@
       },
       "units": {
         "title": "Discovered indoor units",
-        "description": "The following indoor units were found on the gateway:\n\n{unit_summary}\n\nClick Submit to add them all to Home Assistant."
+        "description": "The following indoor units were found on the gateway:\n\n{unit_summary}\n\nClick Submit to continue."
+      },
+      "unit_types": {
+        "title": "Unit type selection",
+        "description": "Select the type for each indoor unit.\n\n{unit_summary}\n\n**VRF** – Variable Refrigerant Flow (multi-split system)\n**RAC** – Room Air Conditioner (single-split wall unit)\n**ATW** – Air to Water (hydronic heat pump)\n\nThe type determines which modes, fan speeds and temperature range are available.",
+        "data": {}
       }
     },
     "error": {

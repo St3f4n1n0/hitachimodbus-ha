@@ -33,7 +33,6 @@ MODBUS_STRIDE = 32
 TEMP_NOT_AVAILABLE = 255
 
 # ── Gateway low-level registers ────────────────────────────────────────────
-# These exist once for the whole gateway device (not per indoor unit).
 
 GATEWAY_REG_TYPE = 0x0000        # device type
 GATEWAY_REG_FIRMWARE = 0x0001    # firmware version (e.g. 0x00FD → H-0253)
@@ -78,7 +77,55 @@ OFFSET_OP_CONDITION = 22     # 0: OFF, 1: Thermo-OFF, 2: Thermo-ON, 3: Alarm
 OFFSET_AMBIENT_TEMP = 24     # ambient temperature (signed °C)
 OFFSET_RC_TEMP = 25          # remote-control switch temperature
 
-# ── Value maps ─────────────────────────────────────────────────────────────
+# ── Unit types (PMML0351A §5.2.2 availability columns) ────────────────────
+
+UNIT_TYPE_VRF = "vrf"   # Variable Refrigerant Flow  (multi-split)
+UNIT_TYPE_RAC = "rac"   # Room Air Conditioner        (mono-split)
+UNIT_TYPE_ATW = "atw"   # Air to Water                (hydronic heat pump)
+
+UNIT_TYPES = [UNIT_TYPE_VRF, UNIT_TYPE_RAC, UNIT_TYPE_ATW]
+
+# ── Per-type HVAC mode availability ───────────────────────────────────────
+# Sources: PMML0351A §5.2.2, "Mode setting order" availability column.
+# ATW controls a water circuit – "mode" maps to heating/cooling of the circuit;
+# dry and fan_only have no meaning for a water-based system.
+
+HVAC_MODES_BY_TYPE: dict[str, list[str]] = {
+    UNIT_TYPE_VRF: ["off", "cool", "dry", "fan_only", "heat", "heat_cool"],
+    UNIT_TYPE_RAC: ["off", "cool", "dry", "fan_only", "heat", "heat_cool"],
+    UNIT_TYPE_ATW: ["off", "cool", "heat"],
+}
+
+# ── Per-type fan speed availability ───────────────────────────────────────
+# ATW has no fan motor to control.
+# RAC may not expose the "high2" speed (depends on model).
+
+FAN_MODES_BY_TYPE: dict[str, list[str]] = {
+    UNIT_TYPE_VRF: ["low", "medium", "high", "high2", "auto"],
+    UNIT_TYPE_RAC: ["low", "medium", "high", "auto"],
+    UNIT_TYPE_ATW: [],  # no fan control
+}
+
+# ── Per-type temperature range ─────────────────────────────────────────────
+# ATW supplies water to a hydronic circuit; the useful range is wider.
+# Format: (min °C, max °C, step °C)
+
+TEMP_RANGE_BY_TYPE: dict[str, tuple[float, float, float]] = {
+    UNIT_TYPE_VRF: (16.0, 32.0, 1.0),
+    UNIT_TYPE_RAC: (16.0, 32.0, 1.0),
+    UNIT_TYPE_ATW: (16.0, 55.0, 1.0),
+}
+
+# ── Per-type supported HA ClimateEntityFeature flags ──────────────────────
+# ATW has no fan and no louver; VRF/RAC support both.
+
+FEATURES_BY_TYPE: dict[str, list[str]] = {
+    UNIT_TYPE_VRF: ["target_temperature", "fan_mode"],
+    UNIT_TYPE_RAC: ["target_temperature", "fan_mode"],
+    UNIT_TYPE_ATW: ["target_temperature"],
+}
+
+# ── Value maps (shared across types) ──────────────────────────────────────
 
 # HVAC mode: Modbus value ↔ Home Assistant string
 MODBUS_TO_HA_MODE: dict[int, str] = {
@@ -86,7 +133,7 @@ MODBUS_TO_HA_MODE: dict[int, str] = {
     1: "dry",
     2: "fan_only",
     3: "heat",
-    4: "heat_cool",  # AUTO mode
+    4: "heat_cool",
 }
 HA_MODE_TO_MODBUS: dict[str, int] = {v: k for k, v in MODBUS_TO_HA_MODE.items()}
 
@@ -99,12 +146,3 @@ MODBUS_TO_HA_FAN: dict[int, str] = {
     4: "auto",
 }
 HA_FAN_TO_MODBUS: dict[str, int] = {v: k for k, v in MODBUS_TO_HA_FAN.items()}
-
-# Full list of HVAC modes exposed to HA (must include "off")
-HVAC_MODES = ["off", "cool", "dry", "fan_only", "heat", "heat_cool"]
-FAN_MODES = ["low", "medium", "high", "high2", "auto"]
-
-# Temperature range for the climate entity
-TEMP_MIN = 16.0
-TEMP_MAX = 32.0
-TEMP_STEP = 1.0

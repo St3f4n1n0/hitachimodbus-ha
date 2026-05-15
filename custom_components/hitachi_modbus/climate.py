@@ -20,39 +20,45 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from .const import (
     CONF_HOST,
     DOMAIN,
-    FAN_MODES,
+    FAN_MODES_BY_TYPE,
     HA_FAN_TO_MODBUS,
     HA_MODE_TO_MODBUS,
-    HVAC_MODES,
+    HVAC_MODES_BY_TYPE,
     MODBUS_TO_HA_FAN,
     MODBUS_TO_HA_MODE,
+    OFFSET_ALARM_CODE,
     OFFSET_FAN_CMD,
     OFFSET_FAN_STATUS,
+    OFFSET_GAS_PIPE_TEMP,
     OFFSET_INLET_TEMP,
+    OFFSET_LIQUID_PIPE_TEMP,
     OFFSET_MODE_CMD,
     OFFSET_MODE_STATUS,
     OFFSET_ONOFF_CMD,
     OFFSET_ONOFF_STATUS,
+    OFFSET_OP_CONDITION,
+    OFFSET_OUTLET_TEMP,
     OFFSET_TEMP_CMD,
     OFFSET_TEMP_STATUS,
-    TEMP_MAX,
-    TEMP_MIN,
-    TEMP_STEP,
+    OFFSET_VALVE_OPENING,
+    TEMP_RANGE_BY_TYPE,
+    UNIT_TYPE_ATW,
+    UNIT_TYPE_VRF,
 )
 from .coordinator import HitachiModbusCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
 # HVACMode string → HA enum
-_STR_TO_HVAC = {
-    "off": HVACMode.OFF,
-    "cool": HVACMode.COOL,
-    "dry": HVACMode.DRY,
-    "fan_only": HVACMode.FAN_ONLY,
-    "heat": HVACMode.HEAT,
+_STR_TO_HVAC: dict[str, HVACMode] = {
+    "off":       HVACMode.OFF,
+    "cool":      HVACMode.COOL,
+    "dry":       HVACMode.DRY,
+    "fan_only":  HVACMode.FAN_ONLY,
+    "heat":      HVACMode.HEAT,
     "heat_cool": HVACMode.HEAT_COOL,
 }
-_HVAC_TO_STR = {v: k for k, v in _STR_TO_HVAC.items()}
+_HVAC_TO_STR: dict[HVACMode, str] = {v: k for k, v in _STR_TO_HVAC.items()}
 
 
 async def async_setup_entry(
@@ -60,10 +66,10 @@ async def async_setup_entry(
     entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    """Create the gateway device and one ClimateEntity per discovered indoor unit."""
+    """Register the gateway device then create one ClimateEntity per unit."""
     coordinator: HitachiModbusCoordinator = hass.data[DOMAIN][entry.entry_id]
 
-    # Register the gateway as a parent device so indoor units can reference it
+    # Register the gateway itself so indoor units can reference it via via_device
     dev_reg = dr.async_get(hass)
     dev_reg.async_get_or_create(
         config_entry_id=entry.entry_id,
@@ -78,26 +84,18 @@ async def async_setup_entry(
         _LOGGER.warning("No units in config entry – nothing to create")
         return
 
-    entities = [
-        HitachiClimateEntity(coordinator, entry, unit["slot_id"], unit["ou"], unit["iu"])
-        for unit in units
-    ]
-    async_add_entities(entities)
+    async_add_entities(
+        HitachiClimateEntity(coordinator, entry, u["slot_id"], u["ou"], u["iu"],
+                             u.get("unit_type", UNIT_TYPE_VRF))
+        for u in units
+    )
 
 
 class HitachiClimateEntity(CoordinatorEntity[HitachiModbusCoordinator], ClimateEntity):
-    """Represents one Hitachi indoor unit connected via the HC-A ModBus gateway."""
+    """One Hitachi indoor unit slot exposed as a Home Assistant climate entity."""
 
     _attr_has_entity_name = True
     _attr_temperature_unit = UnitOfTemperature.CELSIUS
-    _attr_hvac_modes = [_STR_TO_HVAC[m] for m in HVAC_MODES]
-    _attr_fan_modes = FAN_MODES
-    _attr_supported_features = (
-        ClimateEntityFeature.TARGET_TEMPERATURE | ClimateEntityFeature.FAN_MODE
-    )
-    _attr_min_temp = TEMP_MIN
-    _attr_max_temp = TEMP_MAX
-    _attr_target_temperature_step = TEMP_STEP
 
     def __init__(
         self,
@@ -106,15 +104,34 @@ class HitachiClimateEntity(CoordinatorEntity[HitachiModbusCoordinator], ClimateE
         slot_id: int,
         ou: int,
         iu: int,
+        unit_type: str,
     ) -> None:
         super().__init__(coordinator)
         self._slot_id = slot_id
         self._ou = ou
         self._iu = iu
+        self._unit_type = unit_type
         self._entry = entry
 
         self._attr_unique_id = f"{entry.entry_id}_slot{slot_id}"
         self._attr_name = f"Ou{ou} Iu{iu}"
+
+        # ── Type-specific static configuration ────────────────────────────
+        hvac_strs = HVAC_MODES_BY_TYPE[unit_type]
+        self._attr_hvac_modes = [_STR_TO_HVAC[m] for m in hvac_strs]
+
+        fan_list = FAN_MODES_BY_TYPE[unit_type]
+        self._attr_fan_modes = fan_list if fan_list else None
+
+        temp_min, temp_max, temp_step = TEMP_RANGE_BY_TYPE[unit_type]
+        self._attr_min_temp = temp_min
+        self._attr_max_temp = temp_max
+        self._attr_target_temperature_step = temp_step
+
+        features = ClimateEntityFeature.TARGET_TEMPERATURE
+        if fan_list:
+            features |= ClimateEntityFeature.FAN_MODE
+        self._attr_supported_features = features
 
     # ── Device info ────────────────────────────────────────────────────────
 
@@ -122,9 +139,9 @@ class HitachiClimateEntity(CoordinatorEntity[HitachiModbusCoordinator], ClimateE
     def device_info(self) -> DeviceInfo:
         return DeviceInfo(
             identifiers={(DOMAIN, f"{self._entry.entry_id}_slot{self._slot_id}")},
-            name=f"Hitachi Indoor Ou{self._ou} Iu{self._iu}",
+            name=f"Hitachi Indoor Ou{self._ou} Iu{self._iu} ({self._unit_type.upper()})",
             manufacturer="Hitachi",
-            model="HC-A16MB indoor unit",
+            model=f"Indoor unit ({self._unit_type.upper()})",
             via_device=(DOMAIN, self._entry.entry_id),
         )
 
@@ -132,7 +149,6 @@ class HitachiClimateEntity(CoordinatorEntity[HitachiModbusCoordinator], ClimateE
 
     @property
     def _regs(self) -> list[int] | None:
-        """Return the current register block for this slot, or None."""
         if self.coordinator.data is None:
             return None
         return self.coordinator.data.get(self._slot_id)
@@ -143,7 +159,7 @@ class HitachiClimateEntity(CoordinatorEntity[HitachiModbusCoordinator], ClimateE
             return None
         return regs[offset]
 
-    # ── State properties ───────────────────────────────────────────────────
+    # ── State ──────────────────────────────────────────────────────────────
 
     @property
     def available(self) -> bool:
@@ -159,42 +175,40 @@ class HitachiClimateEntity(CoordinatorEntity[HitachiModbusCoordinator], ClimateE
         mode_val = self._reg(OFFSET_MODE_STATUS)
         if mode_val is None:
             return HVACMode.OFF
-        ha_mode_str = MODBUS_TO_HA_MODE.get(mode_val, "cool")
-        return _STR_TO_HVAC.get(ha_mode_str, HVACMode.COOL)
+        ha_str = MODBUS_TO_HA_MODE.get(mode_val, "cool")
+        return _STR_TO_HVAC.get(ha_str, HVACMode.COOL)
 
     @property
     def fan_mode(self) -> str | None:
-        fan_val = self._reg(OFFSET_FAN_STATUS)
-        if fan_val is None:
+        if not self._attr_fan_modes:
             return None
-        return MODBUS_TO_HA_FAN.get(fan_val, "auto")
+        val = self._reg(OFFSET_FAN_STATUS)
+        if val is None:
+            return None
+        return MODBUS_TO_HA_FAN.get(val, "auto")
 
     @property
     def current_temperature(self) -> float | None:
-        val = self._reg(OFFSET_INLET_TEMP)
-        if val is None:
+        regs = self._regs
+        if regs is None:
             return None
-        return HitachiModbusCoordinator.get_signed_temp(self._regs, OFFSET_INLET_TEMP)
+        return HitachiModbusCoordinator.get_signed_temp(regs, OFFSET_INLET_TEMP)
 
     @property
     def target_temperature(self) -> float | None:
         val = self._reg(OFFSET_TEMP_STATUS)
-        if val is None:
-            return None
-        return float(val)
+        return float(val) if val is not None else None
 
-    # ── Control methods ────────────────────────────────────────────────────
+    # ── Control ────────────────────────────────────────────────────────────
 
     async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
-        """Turn the unit on/off and optionally change operating mode."""
         if hvac_mode == HVACMode.OFF:
             await self.coordinator.async_write_unit_register(
                 self._slot_id, OFFSET_ONOFF_CMD, 0
             )
         else:
-            ha_mode_str = _HVAC_TO_STR.get(hvac_mode, "cool")
-            modbus_mode = HA_MODE_TO_MODBUS.get(ha_mode_str, 0)
-            # First turn on, then set mode
+            ha_str = _HVAC_TO_STR.get(hvac_mode, "cool")
+            modbus_mode = HA_MODE_TO_MODBUS.get(ha_str, 0)
             await self.coordinator.async_write_unit_register(
                 self._slot_id, OFFSET_ONOFF_CMD, 1
             )
@@ -204,7 +218,9 @@ class HitachiClimateEntity(CoordinatorEntity[HitachiModbusCoordinator], ClimateE
         await self.coordinator.async_request_refresh()
 
     async def async_set_fan_mode(self, fan_mode: str) -> None:
-        modbus_fan = HA_FAN_TO_MODBUS.get(fan_mode, 4)  # default: auto
+        if not self._attr_fan_modes:
+            return
+        modbus_fan = HA_FAN_TO_MODBUS.get(fan_mode, 4)
         await self.coordinator.async_write_unit_register(
             self._slot_id, OFFSET_FAN_CMD, modbus_fan
         )
@@ -219,7 +235,7 @@ class HitachiClimateEntity(CoordinatorEntity[HitachiModbusCoordinator], ClimateE
         )
         await self.coordinator.async_request_refresh()
 
-    # ── Extra state attributes ─────────────────────────────────────────────
+    # ── Extra attributes ───────────────────────────────────────────────────
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
@@ -229,40 +245,31 @@ class HitachiClimateEntity(CoordinatorEntity[HitachiModbusCoordinator], ClimateE
 
         attrs: dict[str, Any] = {
             "slot_id": self._slot_id,
+            "unit_type": self._unit_type,
             "ou": self._ou,
             "iu": self._iu,
         }
 
-        # Temperature sensors
-        inlet = HitachiModbusCoordinator.get_signed_temp(regs, OFFSET_INLET_TEMP)
-        if inlet is not None:
-            attrs["inlet_temperature"] = inlet
+        for name, offset in (
+            ("inlet_temperature",        OFFSET_INLET_TEMP),
+            ("outlet_temperature",       OFFSET_OUTLET_TEMP),
+            ("gas_pipe_temperature",     OFFSET_GAS_PIPE_TEMP),
+            ("liquid_pipe_temperature",  OFFSET_LIQUID_PIPE_TEMP),
+        ):
+            val = HitachiModbusCoordinator.get_signed_temp(regs, offset)
+            if val is not None:
+                attrs[name] = val
 
-        from .const import OFFSET_OUTLET_TEMP, OFFSET_GAS_PIPE_TEMP, OFFSET_LIQUID_PIPE_TEMP, OFFSET_ALARM_CODE, OFFSET_VALVE_OPENING, OFFSET_OP_CONDITION  # noqa: PLC0415
+        if OFFSET_ALARM_CODE < len(regs):
+            attrs["alarm_code"] = regs[OFFSET_ALARM_CODE]
 
-        outlet = HitachiModbusCoordinator.get_signed_temp(regs, OFFSET_OUTLET_TEMP)
-        if outlet is not None:
-            attrs["outlet_temperature"] = outlet
+        if OFFSET_VALVE_OPENING < len(regs):
+            attrs["valve_opening_pct"] = regs[OFFSET_VALVE_OPENING]
 
-        gas = HitachiModbusCoordinator.get_signed_temp(regs, OFFSET_GAS_PIPE_TEMP)
-        if gas is not None:
-            attrs["gas_pipe_temperature"] = gas
-
-        liquid = HitachiModbusCoordinator.get_signed_temp(regs, OFFSET_LIQUID_PIPE_TEMP)
-        if liquid is not None:
-            attrs["liquid_pipe_temperature"] = liquid
-
-        alarm = regs[OFFSET_ALARM_CODE] if OFFSET_ALARM_CODE < len(regs) else None
-        if alarm is not None:
-            attrs["alarm_code"] = alarm
-
-        valve = regs[OFFSET_VALVE_OPENING] if OFFSET_VALVE_OPENING < len(regs) else None
-        if valve is not None:
-            attrs["valve_opening_pct"] = valve
-
-        op = regs[OFFSET_OP_CONDITION] if OFFSET_OP_CONDITION < len(regs) else None
-        if op is not None:
-            _op_labels = {0: "off", 1: "thermo_off", 2: "thermo_on", 3: "alarm"}
-            attrs["operation_condition"] = _op_labels.get(op, str(op))
+        if OFFSET_OP_CONDITION < len(regs):
+            _labels = {0: "off", 1: "thermo_off", 2: "thermo_on", 3: "alarm"}
+            attrs["operation_condition"] = _labels.get(
+                regs[OFFSET_OP_CONDITION], str(regs[OFFSET_OP_CONDITION])
+            )
 
         return attrs

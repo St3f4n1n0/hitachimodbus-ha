@@ -14,7 +14,12 @@
       },
       "units": {
         "title": "Unità interne rilevate",
-        "description": "Le seguenti unità interne sono state trovate sul gateway:\n\n{unit_summary}\n\nClicca Invia per aggiungerle tutte a Home Assistant."
+        "description": "Le seguenti unità interne sono state trovate sul gateway:\n\n{unit_summary}\n\nClicca Invia per continuare."
+      },
+      "unit_types": {
+        "title": "Selezione tipo unità",
+        "description": "Seleziona il tipo di ogni unità interna.\n\n{unit_summary}\n\n**VRF** – Variable Refrigerant Flow (sistema multi-split)\n**RAC** – Room Air Conditioner (mono-split a parete)\n**ATW** – Air to Water (pompa di calore idronica)\n\nIl tipo determina le modalità operative, le velocità ventola e il range di temperatura disponibili.",
+        "data": {}
       }
     },
     "error": {

@@ -113,7 +113,7 @@ FAN_MODES_BY_TYPE: dict[str, list[str]] = {
 TEMP_RANGE_BY_TYPE: dict[str, tuple[float, float, float]] = {
     UNIT_TYPE_VRF: (16.0, 32.0, 1.0),
     UNIT_TYPE_RAC: (16.0, 32.0, 1.0),
-    UNIT_TYPE_ATW: (16.0, 55.0, 1.0),
+    UNIT_TYPE_ATW: (0.0, 80.0, 1.0),
 }
 
 # ── ATW §5.2.2 address space (HC-A(16/64)MB only) ────────────────────────────

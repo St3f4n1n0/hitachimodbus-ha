@@ -241,7 +241,8 @@ class HitachiClimateEntity(CoordinatorEntity[HitachiModbusCoordinator], ClimateE
     @property
     def current_temperature(self) -> float | None:
         if self._unit_type == UNIT_TYPE_ATW:
-            val = self._atw_reg(ATW_OFFSET_WATER_INLET_TEMP)
+            # Use actual DHW tank temperature as current temperature
+            val = self._atw_reg(ATW_OFFSET_DHW_TEMP)
             if val is None:
                 return None
             signed = self._signed(val)
@@ -255,10 +256,8 @@ class HitachiClimateEntity(CoordinatorEntity[HitachiModbusCoordinator], ClimateE
     @property
     def target_temperature(self) -> float | None:
         if self._unit_type == UNIT_TYPE_ATW:
-            mode_val = self._atw_reg(ATW_OFFSET_MODE_STATUS)
-            is_heat = mode_val is not None and bool(mode_val & 0x01)
-            offset = ATW_OFFSET_HEAT_SETTEMP_ST if is_heat else ATW_OFFSET_COOL_SETTEMP_ST
-            val = self._atw_reg(offset)
+            # DHWT setting temperature is the user-facing setpoint
+            val = self._atw_reg(ATW_OFFSET_DHWT_SETTEMP_ST)
             return float(val) if val is not None else None
 
         val = self._reg(OFFSET_TEMP_STATUS)
@@ -320,11 +319,9 @@ class HitachiClimateEntity(CoordinatorEntity[HitachiModbusCoordinator], ClimateE
             return
 
         if self._unit_type == UNIT_TYPE_ATW:
-            mode_val = self._atw_reg(ATW_OFFSET_MODE_STATUS)
-            is_heat = mode_val is not None and bool(mode_val & 0x01)
-            offset = ATW_OFFSET_HEAT_SETTEMP_CMD if is_heat else ATW_OFFSET_COOL_SETTEMP_CMD
+            # Write to DHWT setpoint (unified control in climate entity)
             await self.coordinator.async_write_unit_register(
-                self._slot_id, offset, int(temp)
+                self._slot_id, ATW_OFFSET_DHWT_SETTEMP_CMD, int(temp)
             )
         else:
             await self.coordinator.async_write_unit_register(

@@ -14,8 +14,10 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from .const import (
     ATW_OFFSET_ANTILEG_SETTEMP_CMD,
     ATW_OFFSET_ANTILEG_SETTEMP_ST,
-    ATW_OFFSET_DHWT_SETTEMP_CMD,
-    ATW_OFFSET_DHWT_SETTEMP_ST,
+    ATW_OFFSET_COOL_SETTEMP_CMD,
+    ATW_OFFSET_COOL_SETTEMP_ST,
+    ATW_OFFSET_HEAT_SETTEMP_CMD,
+    ATW_OFFSET_HEAT_SETTEMP_ST,
     ATW_READ_START,
     DOMAIN,
     UNIT_TYPE_ATW,
@@ -37,13 +39,22 @@ class _NumberDesc:
 
 _ATW_NUMBERS: tuple[_NumberDesc, ...] = (
     _NumberDesc(
-        "dhwt_settemp",
-        "DHWT Setting Temperature",
-        ATW_OFFSET_DHWT_SETTEMP_CMD,
-        ATW_OFFSET_DHWT_SETTEMP_ST,
+        "circuit1_heat_settemp",
+        "Circuit 1 Heating Setpoint",
+        ATW_OFFSET_HEAT_SETTEMP_CMD,
+        ATW_OFFSET_HEAT_SETTEMP_ST,
         min_value=0.0,
         max_value=80.0,
-        icon="mdi:thermometer-water",
+        icon="mdi:radiator",
+    ),
+    _NumberDesc(
+        "circuit1_cool_settemp",
+        "Circuit 1 Cooling Setpoint",
+        ATW_OFFSET_COOL_SETTEMP_CMD,
+        ATW_OFFSET_COOL_SETTEMP_ST,
+        min_value=0.0,
+        max_value=80.0,
+        icon="mdi:snowflake-thermometer",
     ),
     _NumberDesc(
         "antileg_settemp",

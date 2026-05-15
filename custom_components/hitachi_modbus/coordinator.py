@@ -7,6 +7,8 @@ from datetime import timedelta
 from pymodbus.client import AsyncModbusTcpClient
 from pymodbus.exceptions import ModbusException
 
+from .modbus_compat import modbus_read, modbus_write
+
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
@@ -47,18 +49,6 @@ def _parse_temp(val: int) -> float | None:
     return float(signed)
 
 
-async def _read_regs(client: AsyncModbusTcpClient, address: int, count: int, slave: int):
-    """Read holding registers using positional args for pymodbus compatibility.
-
-    pymodbus ≥ 3.8 made 'slave' positional-only; passing it as a keyword
-    raises TypeError. Using positional args works across all 3.x versions.
-    """
-    return await client.read_holding_registers(address, count, slave)
-
-
-async def _write_reg(client: AsyncModbusTcpClient, address: int, value: int, slave: int):
-    """Write a single holding register using positional args."""
-    return await client.write_register(address, value, slave)
 
 
 class HitachiModbusCoordinator(DataUpdateCoordinator[dict[int, list[int]]]):
@@ -103,7 +93,7 @@ class HitachiModbusCoordinator(DataUpdateCoordinator[dict[int, list[int]]]):
         if not await self._ensure_connected():
             return {}
         try:
-            result = await _read_regs(self._client, GATEWAY_REG_TYPE, 2, self._slave)
+            result = await modbus_read(self._client, GATEWAY_REG_TYPE, 2, self._slave)
             if result.isError():
                 return {}
             return {
@@ -121,7 +111,7 @@ class HitachiModbusCoordinator(DataUpdateCoordinator[dict[int, list[int]]]):
         if not await self._ensure_connected():
             return None
         try:
-            result = await _read_regs(self._client, address, 1, self._slave)
+            result = await modbus_read(self._client, address, 1, self._slave)
             if result.isError():
                 return None
             return result.registers[0]
@@ -134,7 +124,7 @@ class HitachiModbusCoordinator(DataUpdateCoordinator[dict[int, list[int]]]):
         if not await self._ensure_connected():
             return False
         try:
-            result = await _write_reg(self._client, address, value, self._slave)
+            result = await modbus_write(self._client, address, value, self._slave)
             return not result.isError()
         except ModbusException as exc:
             _LOGGER.error(
@@ -167,7 +157,7 @@ class HitachiModbusCoordinator(DataUpdateCoordinator[dict[int, list[int]]]):
         for slot_id in range(MAX_UNITS):
             base = self._unit_base(slot_id)
             try:
-                result = await _read_regs(
+                result = await modbus_read(
                     self._client, base, MODBUS_STRIDE, self._slave
                 )
                 if result.isError() or not result.registers:

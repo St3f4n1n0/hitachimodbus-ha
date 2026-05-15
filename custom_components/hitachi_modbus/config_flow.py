@@ -135,6 +135,7 @@ class HitachiModbusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """
         from pymodbus.client import AsyncModbusTcpClient  # noqa: PLC0415
         from pymodbus.exceptions import ModbusException  # noqa: PLC0415
+        from .modbus_compat import modbus_read  # noqa: PLC0415
 
         host: str = config[CONF_HOST]
         port: int = config.get(CONF_PORT, DEFAULT_PORT)
@@ -177,8 +178,7 @@ class HitachiModbusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 base = n_base + slot_id * MODBUS_STRIDE
                 try:
                     result = await asyncio.wait_for(
-                        # positional args: pymodbus ≥3.8 made 'slave' positional-only
-                        client.read_holding_registers(base, 3, slave),
+                        modbus_read(client, base, 3, slave),
                         timeout=_READ_TIMEOUT,
                     )
                 except asyncio.TimeoutError:

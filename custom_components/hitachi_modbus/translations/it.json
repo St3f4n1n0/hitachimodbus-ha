@@ -1,0 +1,60 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Gateway Hitachi ModBus – Connessione",
+        "description": "Inserisci i dati di rete del tuo gateway HC-A(x)MB.",
+        "data": {
+          "host": "Indirizzo IP del gateway",
+          "port": "Porta Modbus TCP (default 502)",
+          "slave_id": "Modbus slave ID (default 1)",
+          "n_base": "Indirizzo base registri (2000 o 20000)",
+          "scan_interval": "Intervallo di polling (secondi)"
+        }
+      },
+      "units": {
+        "title": "Unità interne rilevate",
+        "description": "Le seguenti unità interne sono state trovate sul gateway:\n\n{unit_summary}\n\nClicca Invia per continuare."
+      },
+      "unit_types": {
+        "title": "Selezione tipo unità",
+        "description": "Seleziona il tipo di ogni unità interna.\n\n{unit_summary}\n\n**VRF** – Variable Refrigerant Flow (sistema multi-split)\n**RAC** – Room Air Conditioner (mono-split a parete)\n**ATW** – Air to Water (pompa di calore idronica)\n\nIl tipo determina le modalità operative, le velocità ventola e il range di temperatura disponibili.",
+        "data": {
+          "type_slot_0":  "Tipo slot 0 (default: vrf)",
+          "type_slot_1":  "Tipo slot 1 (default: vrf)",
+          "type_slot_2":  "Tipo slot 2 (default: vrf)",
+          "type_slot_3":  "Tipo slot 3 (default: vrf)",
+          "type_slot_4":  "Tipo slot 4 (default: vrf)",
+          "type_slot_5":  "Tipo slot 5 (default: vrf)",
+          "type_slot_6":  "Tipo slot 6 (default: vrf)",
+          "type_slot_7":  "Tipo slot 7 (default: vrf)",
+          "type_slot_8":  "Tipo slot 8 (default: vrf)",
+          "type_slot_9":  "Tipo slot 9 (default: vrf)",
+          "type_slot_10": "Tipo slot 10 (default: vrf)",
+          "type_slot_11": "Tipo slot 11 (default: vrf)",
+          "type_slot_12": "Tipo slot 12 (default: vrf)",
+          "type_slot_13": "Tipo slot 13 (default: vrf)",
+          "type_slot_14": "Tipo slot 14 (default: vrf)",
+          "type_slot_15": "Tipo slot 15 (default: vrf)"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Impossibile connettersi al gateway. Verifica l'indirizzo IP e lo slave ID Modbus.",
+      "no_units_found": "Connessione al gateway riuscita, ma non sono state trovate unità interne. Assicurati che le unità siano accese e configurate correttamente nel gateway."
+    },
+    "abort": {
+      "already_configured": "Questo gateway è già configurato."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Hitachi ModBus – Opzioni",
+        "data": {
+          "scan_interval": "Intervallo di polling (secondi)"
+        }
+      }
+    }
+  }
+}

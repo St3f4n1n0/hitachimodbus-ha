@@ -1,6 +1,7 @@
 """DataUpdateCoordinator for Hitachi ModBus Gateway."""
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import timedelta
 
@@ -29,7 +30,6 @@ from .const import (
     DEFAULT_SLAVE_ID,
     DOMAIN,
     GATEWAY_REG_TYPE,
-    MAX_UNITS,
     MODBUS_STRIDE,
     OFFSET_EXIST,
     TEMP_NOT_AVAILABLE,
@@ -72,18 +72,31 @@ class HitachiModbusCoordinator(DataUpdateCoordinator[dict[int, list[int]]]):
         self._unit_types: dict[int, str] = unit_types
         self._client: AsyncModbusTcpClient | None = None
 
+        # Slots to poll: the ones picked up during discovery.  Polling the whole
+        # 0..MAX_UNITS range would spend one Modbus transaction (and, on many
+        # gateways, one timeout) per empty slot on every cycle.
+        self._slots: list[int] = sorted(unit_types)
+
+        # The options flow writes the polling interval to entry.options; fall
+        # back to entry.data for entries created before the options flow ran.
+        scan_interval = entry.options.get(
+            CONF_SCAN_INTERVAL,
+            entry.data.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL),
+        )
+
         super().__init__(
             hass,
             _LOGGER,
             name=DOMAIN,
-            update_interval=timedelta(
-                seconds=entry.data.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
-            ),
+            update_interval=timedelta(seconds=scan_interval),
         )
 
     # ── Connection ─────────────────────────────────────────────────────────
 
     async def _async_connect(self) -> bool:
+        # Drop any half-open socket from a previous attempt before replacing it.
+        if self._client is not None:
+            self._client.close()
         self._client = AsyncModbusTcpClient(host=self._host, port=self._port)
         connected = await self._client.connect()
         if not connected:
@@ -175,8 +188,9 @@ class HitachiModbusCoordinator(DataUpdateCoordinator[dict[int, list[int]]]):
             )
 
         data: dict[int, list[int]] = {}
+        errors = 0
 
-        for slot_id in range(MAX_UNITS):
+        for slot_id in self._slots:
             unit_type = self._unit_types.get(slot_id)
 
             if unit_type == UNIT_TYPE_ATW:
@@ -191,18 +205,29 @@ class HitachiModbusCoordinator(DataUpdateCoordinator[dict[int, list[int]]]):
             try:
                 result = await modbus_read(self._client, base, count, self._slave)
                 if result.isError() or not result.registers:
+                    errors += 1
                     continue
                 regs = result.registers
 
                 if unit_type != UNIT_TYPE_ATW:
                     # VRF/RAC: gate on EXIST flag so unknown slots are ignored
-                    if regs[OFFSET_EXIST] != 1:
+                    if len(regs) <= OFFSET_EXIST or regs[OFFSET_EXIST] != 1:
                         continue
 
                 data[slot_id] = regs
 
-            except ModbusException as exc:
+            except (ModbusException, asyncio.TimeoutError, OSError) as exc:
+                errors += 1
                 _LOGGER.warning("ModBus error polling slot %d: %s", slot_id, exc)
+
+        if not data and errors:
+            # Every configured slot failed – the link is down, so tell the
+            # coordinator instead of publishing an empty (but "successful")
+            # update that would leave the entities showing stale values.
+            raise UpdateFailed(
+                f"No slot could be read from the Hitachi gateway at "
+                f"{self._host}:{self._port}"
+            )
 
         return data
 
@@ -217,4 +242,7 @@ class HitachiModbusCoordinator(DataUpdateCoordinator[dict[int, list[int]]]):
 
     @staticmethod
     def get_signed_temp(regs: list[int], offset: int) -> float | None:
+        """Return the °C value at ``offset``, or None if absent/disconnected."""
+        if offset >= len(regs):
+            return None
         return _parse_temp(regs[offset])

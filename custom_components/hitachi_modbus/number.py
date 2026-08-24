@@ -7,7 +7,7 @@ from homeassistant.components.number import NumberEntity, NumberMode
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import UnitOfTemperature
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.entity import DeviceInfo
+from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
@@ -157,7 +157,9 @@ class HitachiATWNumber(CoordinatorEntity[HitachiModbusCoordinator], NumberEntity
     @property
     def available(self) -> bool:
         data = self.coordinator.data
-        return data is not None and self._slot_id in data
+        return (
+            super().available and data is not None and self._slot_id in data
+        )
 
     @property
     def native_value(self) -> float | None:

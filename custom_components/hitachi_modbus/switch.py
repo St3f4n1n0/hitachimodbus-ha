@@ -7,7 +7,7 @@ from typing import Any
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.entity import DeviceInfo
+from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
@@ -107,7 +107,9 @@ class HitachiATWSwitch(CoordinatorEntity[HitachiModbusCoordinator], SwitchEntity
     @property
     def available(self) -> bool:
         data = self.coordinator.data
-        return data is not None and self._slot_id in data
+        return (
+            super().available and data is not None and self._slot_id in data
+        )
 
     @property
     def is_on(self) -> bool | None:

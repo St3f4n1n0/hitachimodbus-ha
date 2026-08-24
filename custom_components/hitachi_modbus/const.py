@@ -50,6 +50,8 @@ OFFSET_UNIT_ADDR = 2     # Indoor unit address  (Iu) – H-LINK unit address
 OFFSET_ONOFF_CMD = 3     # 0: Stop, 1: Run
 OFFSET_MODE_CMD = 4      # 0: Cool, 1: Dry, 2: Fan, 3: Heat, 4: Auto
 OFFSET_FAN_CMD = 5       # 0: Low, 1: Medium, 2: High, 3: High2, 4: Auto
+                         # (3 = "High2"/High-H is an optional function that most
+                         #  indoor units silently execute as High – not exposed)
 OFFSET_TEMP_CMD = 6      # target temperature (°C, integer)
 OFFSET_LOUVER_CMD = 7    # 0–7 (7 = Auto)
 OFFSET_CENTRAL = 8       # lock bitmask – bit0=OnOff, bit1=Mode,
@@ -98,10 +100,16 @@ HVAC_MODES_BY_TYPE: dict[str, list[str]] = {
 
 # ── Per-type fan speed availability ───────────────────────────────────────
 # ATW has no fan motor to control.
-# RAC may not expose the "high2" speed (depends on model).
+#
+# PMML0351A rev.4 defines register value 3 as "High2" (a.k.a. "High H"), but it
+# is an optional indoor-unit function (see optional function EF, "Control in
+# Automatic indoor fan speed mode (supporting High H)").  Units that do not
+# implement it – RAC wall units in particular – accept the value and run the
+# fan at plain High, so the speed is never selectable in practice.  It is
+# therefore not offered; incoming status value 3 is reported as "high".
 
 FAN_MODES_BY_TYPE: dict[str, list[str]] = {
-    UNIT_TYPE_VRF: ["low", "medium", "high", "high2", "auto"],
+    UNIT_TYPE_VRF: ["low", "medium", "high", "auto"],
     UNIT_TYPE_RAC: ["low", "medium", "high", "auto"],
     UNIT_TYPE_ATW: [],  # no fan control
 }
@@ -183,12 +191,28 @@ MODBUS_TO_HA_MODE: dict[int, str] = {
 }
 HA_MODE_TO_MODBUS: dict[str, int] = {v: k for k, v in MODBUS_TO_HA_MODE.items()}
 
-# Fan speed: Modbus value ↔ Home Assistant string
+# Fan speed: Modbus value → Home Assistant string.
+# Value 3 ("High2") is folded into "high": the units that do not implement it
+# run at High anyway, and the ones that do never report it as a distinct speed.
 MODBUS_TO_HA_FAN: dict[int, str] = {
     0: "low",
     1: "medium",
     2: "high",
-    3: "high2",
+    3: "high",
     4: "auto",
 }
-HA_FAN_TO_MODBUS: dict[str, int] = {v: k for k, v in MODBUS_TO_HA_FAN.items()}
+
+# Home Assistant string → Modbus value (declared explicitly: the map above is
+# not injective, so it cannot simply be inverted).
+HA_FAN_TO_MODBUS: dict[str, int] = {
+    "low": 0,
+    "medium": 1,
+    "high": 2,
+    "auto": 4,
+}
+
+# Fan speeds accepted from old configurations / automations that were written
+# while "high2" was still offered, so those calls keep working.
+LEGACY_FAN_ALIASES: dict[str, str] = {
+    "high2": "high",
+}

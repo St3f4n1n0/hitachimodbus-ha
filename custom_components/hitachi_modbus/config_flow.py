@@ -141,7 +141,6 @@ class HitachiModbusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         # Build a schema with one selector per unit
         schema_fields: dict = {}
         for unit in units:
-            label = f"Slot {unit['slot_id']} (Ou={unit['ou']}, Iu={unit['iu']})"
             schema_fields[
                 vol.Required(_type_key(unit["slot_id"]), description={"suggested_value": UNIT_TYPE_VRF})
             ] = vol.In(UNIT_TYPES)
@@ -207,6 +206,7 @@ class HitachiModbusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
             units: list[dict] = []
             gateway_responds = False
+            timeouts = 0
 
             for slot_id in range(MAX_UNITS):
                 base = n_base + slot_id * MODBUS_STRIDE
@@ -217,6 +217,7 @@ class HitachiModbusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     )
                 except asyncio.TimeoutError:
                     _LOGGER.debug("Hitachi: slot %d read timed out", slot_id)
+                    timeouts += 1
                     if slot_id == 0:
                         _LOGGER.error(
                             "Hitachi: gateway at %s:%d does not respond to Modbus "
@@ -247,6 +248,16 @@ class HitachiModbusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     "Hitachi: slot %d → Ou=%d Iu=%d", slot_id,
                     regs[OFFSET_SYS_ADDR], regs[OFFSET_UNIT_ADDR],
                 )
+
+            if not units and not gateway_responds:
+                # Nothing ever came back from the gateway: report a connection
+                # problem rather than "no indoor units configured".
+                _LOGGER.error(
+                    "Hitachi: gateway at %s:%d never answered a register read "
+                    "(slave=%d, n_base=%d, %d timeouts).",
+                    host, port, slave, n_base, timeouts,
+                )
+                return None
 
             return units
 

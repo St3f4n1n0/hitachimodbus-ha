@@ -3,10 +3,10 @@ from __future__ import annotations
 
 import logging
 
+from homeassistant.components import persistent_notification
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant, ServiceCall
-import homeassistant.helpers.config_validation as cv
 import voluptuous as vol
 
 from .const import DOMAIN, UNIT_TYPE_VRF
@@ -64,11 +64,14 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unload_ok:
-        coordinator: HitachiModbusCoordinator = hass.data[DOMAIN].pop(entry.entry_id)
-        await coordinator.async_disconnect()
+        coordinator: HitachiModbusCoordinator | None = hass.data.get(DOMAIN, {}).pop(
+            entry.entry_id, None
+        )
+        if coordinator is not None:
+            await coordinator.async_disconnect()
 
         # Remove services when no entries remain
-        if not hass.data[DOMAIN]:
+        if not hass.data.get(DOMAIN):
             hass.services.async_remove(DOMAIN, SERVICE_READ_REGISTER)
             hass.services.async_remove(DOMAIN, SERVICE_WRITE_REGISTER)
 
@@ -97,7 +100,8 @@ def _async_register_services(hass: HomeAssistant) -> None:
             value if value is not None else "error",
         )
         # Expose result as a persistent notification so it is visible in the UI
-        hass.components.persistent_notification.async_create(
+        persistent_notification.async_create(
+            hass,
             f"Register 0x{address:04X} ({address}) = {value}",
             title="Hitachi ModBus – Register read",
             notification_id=f"hitachi_reg_{address}",

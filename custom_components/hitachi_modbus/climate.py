@@ -12,22 +12,18 @@ from homeassistant.components.climate import (
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import UnitOfTemperature
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import device_registry as dr
-from homeassistant.helpers.entity import DeviceInfo
+from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import (
     ATW_OFFSET_ALARM,
-    ATW_OFFSET_CIRCUIT1_STATUS,
-    ATW_OFFSET_COOL_SETTEMP_CMD,
-    ATW_OFFSET_COOL_SETTEMP_ST,
     ATW_OFFSET_DHW_TEMP,
     ATW_OFFSET_DHWT_SETTEMP_CMD,
     ATW_OFFSET_DHWT_SETTEMP_ST,
     ATW_OFFSET_DHWT_STATUS,
-    ATW_OFFSET_HEAT_SETTEMP_CMD,
-    ATW_OFFSET_HEAT_SETTEMP_ST,
     ATW_OFFSET_MODE_CMD,
     ATW_OFFSET_MODE_STATUS,
     ATW_OFFSET_ONOFF_CMD,
@@ -44,6 +40,7 @@ from .const import (
     HA_FAN_TO_MODBUS,
     HA_MODE_TO_MODBUS,
     HVAC_MODES_BY_TYPE,
+    LEGACY_FAN_ALIASES,
     MODBUS_TO_HA_FAN,
     MODBUS_TO_HA_MODE,
     OFFSET_ALARM_CODE,
@@ -121,6 +118,8 @@ class HitachiClimateEntity(CoordinatorEntity[HitachiModbusCoordinator], ClimateE
 
     _attr_has_entity_name = True
     _attr_temperature_unit = UnitOfTemperature.CELSIUS
+    # TURN_ON / TURN_OFF are declared explicitly in __init__ (HA 2024.2+)
+    _enable_turn_on_off_backwards_compatibility = False
 
     def __init__(
         self,
@@ -152,7 +151,11 @@ class HitachiClimateEntity(CoordinatorEntity[HitachiModbusCoordinator], ClimateE
         self._attr_max_temp = temp_max
         self._attr_target_temperature_step = temp_step
 
-        features = ClimateEntityFeature.TARGET_TEMPERATURE
+        features = (
+            ClimateEntityFeature.TARGET_TEMPERATURE
+            | ClimateEntityFeature.TURN_ON
+            | ClimateEntityFeature.TURN_OFF
+        )
         if fan_list:
             features |= ClimateEntityFeature.FAN_MODE
         self._attr_supported_features = features
@@ -202,7 +205,7 @@ class HitachiClimateEntity(CoordinatorEntity[HitachiModbusCoordinator], ClimateE
 
     @property
     def available(self) -> bool:
-        return self._regs is not None
+        return super().available and self._regs is not None
 
     @property
     def hvac_mode(self) -> HVACMode | None:
@@ -236,7 +239,18 @@ class HitachiClimateEntity(CoordinatorEntity[HitachiModbusCoordinator], ClimateE
         val = self._reg(OFFSET_FAN_STATUS)
         if val is None:
             return None
-        return MODBUS_TO_HA_FAN.get(val, "auto")
+        mode = MODBUS_TO_HA_FAN.get(val)
+        if mode not in self._attr_fan_modes:
+            # An unknown register value (or a speed this unit type does not
+            # expose) must not be published: HA rejects a fan_mode that is not
+            # in fan_modes and the entity would go into an error state.
+            _LOGGER.debug(
+                "Slot %d reported unsupported fan register value %s",
+                self._slot_id,
+                val,
+            )
+            return None
+        return mode
 
     @property
     def current_temperature(self) -> float | None:
@@ -304,10 +318,51 @@ class HitachiClimateEntity(CoordinatorEntity[HitachiModbusCoordinator], ClimateE
             )
         await self.coordinator.async_request_refresh()
 
+    async def async_turn_on(self) -> None:
+        """Start the unit, leaving its current mode untouched.
+
+        The gateway keeps Run/Stop in a register of its own, so the previously
+        selected mode survives a stop; the generic ClimateEntity fallback would
+        instead force the unit into heat_cool/heat/cool.
+        """
+        offset = (
+            ATW_OFFSET_ONOFF_CMD
+            if self._unit_type == UNIT_TYPE_ATW
+            else OFFSET_ONOFF_CMD
+        )
+        await self.coordinator.async_write_unit_register(self._slot_id, offset, 1)
+        await self.coordinator.async_request_refresh()
+
+    async def async_turn_off(self) -> None:
+        """Stop the unit."""
+        offset = (
+            ATW_OFFSET_ONOFF_CMD
+            if self._unit_type == UNIT_TYPE_ATW
+            else OFFSET_ONOFF_CMD
+        )
+        await self.coordinator.async_write_unit_register(self._slot_id, offset, 0)
+        await self.coordinator.async_request_refresh()
+
+    async def async_handle_set_fan_mode_service(self, fan_mode: str) -> None:
+        """Translate retired fan speeds before Home Assistant validates them.
+
+        ClimateEntity checks the requested speed against ``fan_modes`` here and
+        raises before ``async_set_fan_mode`` runs, so an automation still asking
+        for "high2" has to be rewritten at this point rather than further down.
+        """
+        await super().async_handle_set_fan_mode_service(
+            LEGACY_FAN_ALIASES.get(fan_mode, fan_mode)
+        )
+
     async def async_set_fan_mode(self, fan_mode: str) -> None:
         if not self._attr_fan_modes:
             return
-        modbus_fan = HA_FAN_TO_MODBUS.get(fan_mode, 4)
+        fan_mode = LEGACY_FAN_ALIASES.get(fan_mode, fan_mode)
+        modbus_fan = HA_FAN_TO_MODBUS.get(fan_mode)
+        if modbus_fan is None:
+            raise ServiceValidationError(
+                f"Fan mode '{fan_mode}' is not supported by this unit"
+            )
         await self.coordinator.async_write_unit_register(
             self._slot_id, OFFSET_FAN_CMD, modbus_fan
         )

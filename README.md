@@ -1,7 +1,7 @@
 # Hitachi ModBus Gateway – Home Assistant Integration
 
 [![HACS Custom Repository](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://github.com/hacs/integration)
-[![HA Version](https://img.shields.io/badge/Home%20Assistant-2024.1%2B-blue)](https://www.home-assistant.io/)
+[![HA Version](https://img.shields.io/badge/Home%20Assistant-2024.2%2B-blue)](https://www.home-assistant.io/)
 
 A Home Assistant custom integration for **Hitachi HC-A(8/16/64)MB ModBus gateways**, enabling local control of Hitachi indoor units (VRF, RAC, ATW) via Modbus TCP.
 
@@ -16,6 +16,9 @@ A Home Assistant custom integration for **Hitachi HC-A(8/16/64)MB ModBus gateway
 | HC-A8MB | up to 8 | Modbus TCP over LAN |
 | HC-A16MB | up to 16 | Modbus TCP over LAN |
 | HC-A64MB | up to 64 | Modbus TCP over LAN (§5.2.2 extended space required for ATW) |
+
+> **Current limit:** discovery scans slots **0–15**. On an HC-A64MB, indoor units
+> in slots 16–63 are not found yet.
 
 **Unit types supported:**
 
@@ -32,7 +35,7 @@ A Home Assistant custom integration for **Hitachi HC-A(8/16/64)MB ModBus gateway
 ### Climate entity (all unit types)
 - On/Off, HVAC mode (Cool / Heat / Dry / Fan Only / Auto – per type)
 - Target temperature setpoint
-- Fan speed control (VRF/RAC only)
+- Fan speed control (VRF/RAC only): `low` / `medium` / `high` / `auto`
 - Current temperature (room inlet sensor for VRF/RAC; actual DHW tank temperature for ATW)
 - Extra state attributes: pipe temperatures, alarm code, valve opening, operation state
 
@@ -99,7 +102,7 @@ The integration uses a guided UI setup flow with three steps.
 
 ### Step 2 – Discovered units
 
-The integration scans all 16 (or 64) gateway slots and lists the indoor units found. Review and confirm.
+The integration scans gateway slots 0–15 and lists the indoor units found. Review and confirm.
 
 ### Step 3 – Unit type
 
@@ -116,7 +119,7 @@ The type determines which HA platforms (climate / switch / number) and which mod
 ## Prerequisites
 
 - The HC-A gateway must be reachable from the Home Assistant host over TCP (default port 502).
-- `pymodbus` must be installed – it is bundled with Home Assistant (no extra `requirements` needed).
+- `pymodbus` is declared in `manifest.json` and installed automatically by Home Assistant on first setup.
 - For ATW units, the gateway must be an HC-A16MB or HC-A64MB (ATW §5.2.2 address space is not available on HC-A8MB).
 
 ---
@@ -129,6 +132,19 @@ The register addresses and protocol details implemented in this integration are 
   This document describes §5.2.1 (VRF/RAC register space) and §5.2.2 (ATW extended register space).
 
 A copy of the relevant documentation pages is included in the [`Documentation/`](Documentation/) folder of this repository.
+
+### A note on the "High2" fan speed
+
+PMML0351A defines fan register value `3` as **High2** (also called *High H*), but
+it is an optional indoor-unit function – see optional function **EF**, *"Control
+in Automatic indoor fan speed mode (supporting High H)"*. Units that do not
+implement it, RAC wall units in particular, accept the value and simply run the
+fan at **High**.
+
+The speed is therefore **not offered** by this integration. If a unit reports
+register value `3` (for example because it was set from a wired remote), it is
+shown as `high`, which is what the unit is actually doing. Automations that
+still send `high2` keep working: the value is translated to `high`.
 
 The **Hitachi Net Configurator** Java application (the official Windows tool for gateway configuration) is available separately and can be requested from your Hitachi HVAC distributor. It is not included in this repository.
 
@@ -144,6 +160,9 @@ The **Hitachi Net Configurator** Java application (the official Windows tool for
 **ATW sensors show 0 or unavailable**
 - ATW uses a separate register space (§5.2.2: `5000 + slot_id×200 + offset`). Make sure you selected **atw** as the unit type during setup.
 - Some sensors (water inlet temperature) may read 0 if the corresponding probe is not connected.
+
+**The `high2` fan speed disappeared**
+- It was removed on purpose: see [A note on the "High2" fan speed](#a-note-on-the-high2-fan-speed) above. Selecting it never produced a different fan speed on RAC units.
 
 **Entities are unavailable after HA restart**
 - This is normal for the first poll cycle. The coordinator fetches data shortly after startup.

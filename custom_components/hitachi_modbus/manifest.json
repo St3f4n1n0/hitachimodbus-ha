@@ -1,10 +1,10 @@
 {
   "domain": "hitachi_modbus",
   "name": "Hitachi ModBus Gateway",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "config_flow": true,
   "iot_class": "local_polling",
-  "requirements": [],
+  "requirements": ["pymodbus>=3.6.0,<4.0.0"],
   "dependencies": [],
   "codeowners": ["@st3f4n1n0"],
   "documentation": "https://github.com/st3f4n1n0/hitachimodbus-ha",

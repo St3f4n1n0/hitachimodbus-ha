@@ -7,7 +7,7 @@ from typing import Any
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.entity import DeviceInfo
+from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
@@ -23,9 +23,9 @@ from .const import (
     ATW_READ_START,
     DOMAIN,
     UNIT_TYPE_ATW,
-    UNIT_TYPE_VRF,
 )
 from .coordinator import HitachiModbusCoordinator
+from .helpers import resolve_units
 
 
 @dataclass(frozen=True)
@@ -51,12 +51,12 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     coordinator: HitachiModbusCoordinator = hass.data[DOMAIN][entry.entry_id]
-    units: list[dict] = entry.data.get("discovered_units", [])
+    units: list[dict] = resolve_units(entry)
 
     async_add_entities(
         HitachiATWSwitch(coordinator, entry, u["slot_id"], u["ou"], u["iu"], desc)
         for u in units
-        if u.get("unit_type", UNIT_TYPE_VRF) == UNIT_TYPE_ATW
+        if u["unit_type"] == UNIT_TYPE_ATW
         for desc in _ATW_SWITCHES
     )
 
@@ -107,7 +107,9 @@ class HitachiATWSwitch(CoordinatorEntity[HitachiModbusCoordinator], SwitchEntity
     @property
     def available(self) -> bool:
         data = self.coordinator.data
-        return data is not None and self._slot_id in data
+        return (
+            super().available and data is not None and self._slot_id in data
+        )
 
     @property
     def is_on(self) -> bool | None:

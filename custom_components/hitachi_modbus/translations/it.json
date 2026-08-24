@@ -20,16 +20,16 @@
         "title": "Selezione tipo unità",
         "description": "Seleziona il tipo di ogni unità interna.\n\n{unit_summary}\n\n**VRF** – Variable Refrigerant Flow (sistema multi-split)\n**RAC** – Room Air Conditioner (mono-split a parete)\n**ATW** – Air to Water (pompa di calore idronica)\n\nIl tipo determina le modalità operative, le velocità ventola e il range di temperatura disponibili.",
         "data": {
-          "type_slot_0":  "Tipo slot 0 (default: vrf)",
-          "type_slot_1":  "Tipo slot 1 (default: vrf)",
-          "type_slot_2":  "Tipo slot 2 (default: vrf)",
-          "type_slot_3":  "Tipo slot 3 (default: vrf)",
-          "type_slot_4":  "Tipo slot 4 (default: vrf)",
-          "type_slot_5":  "Tipo slot 5 (default: vrf)",
-          "type_slot_6":  "Tipo slot 6 (default: vrf)",
-          "type_slot_7":  "Tipo slot 7 (default: vrf)",
-          "type_slot_8":  "Tipo slot 8 (default: vrf)",
-          "type_slot_9":  "Tipo slot 9 (default: vrf)",
+          "type_slot_0": "Tipo slot 0 (default: vrf)",
+          "type_slot_1": "Tipo slot 1 (default: vrf)",
+          "type_slot_2": "Tipo slot 2 (default: vrf)",
+          "type_slot_3": "Tipo slot 3 (default: vrf)",
+          "type_slot_4": "Tipo slot 4 (default: vrf)",
+          "type_slot_5": "Tipo slot 5 (default: vrf)",
+          "type_slot_6": "Tipo slot 6 (default: vrf)",
+          "type_slot_7": "Tipo slot 7 (default: vrf)",
+          "type_slot_8": "Tipo slot 8 (default: vrf)",
+          "type_slot_9": "Tipo slot 9 (default: vrf)",
           "type_slot_10": "Tipo slot 10 (default: vrf)",
           "type_slot_11": "Tipo slot 11 (default: vrf)",
           "type_slot_12": "Tipo slot 12 (default: vrf)",
@@ -51,8 +51,25 @@
     "step": {
       "init": {
         "title": "Hitachi ModBus – Opzioni",
+        "description": "Modifica l'intervallo di polling e correggi il tipo di ogni unità.\n\n{unit_summary}\n\n**VRF** – Variable Refrigerant Flow (sistema multi-split)\n**RAC** – Room Air Conditioner (mono-split a parete)\n**ATW** – Air to Water (pompa di calore idronica)\n\nCambiare un tipo ricarica l'integrazione e ricrea le entità di quell'unità.",
         "data": {
-          "scan_interval": "Intervallo di polling (secondi)"
+          "scan_interval": "Intervallo di polling (secondi)",
+          "type_slot_0": "Tipo slot 0",
+          "type_slot_1": "Tipo slot 1",
+          "type_slot_2": "Tipo slot 2",
+          "type_slot_3": "Tipo slot 3",
+          "type_slot_4": "Tipo slot 4",
+          "type_slot_5": "Tipo slot 5",
+          "type_slot_6": "Tipo slot 6",
+          "type_slot_7": "Tipo slot 7",
+          "type_slot_8": "Tipo slot 8",
+          "type_slot_9": "Tipo slot 9",
+          "type_slot_10": "Tipo slot 10",
+          "type_slot_11": "Tipo slot 11",
+          "type_slot_12": "Tipo slot 12",
+          "type_slot_13": "Tipo slot 13",
+          "type_slot_14": "Tipo slot 14",
+          "type_slot_15": "Tipo slot 15"
         }
       }
     }

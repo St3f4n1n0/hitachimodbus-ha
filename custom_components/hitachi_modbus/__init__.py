@@ -7,10 +7,12 @@ from homeassistant.components import persistent_notification
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.helpers import entity_registry as er
 import voluptuous as vol
 
-from .const import DOMAIN, UNIT_TYPE_VRF
+from .const import DOMAIN, UNIT_TYPE_ATW
 from .coordinator import HitachiModbusCoordinator
+from .helpers import resolve_units
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -37,10 +39,41 @@ SERVICE_WRITE_SCHEMA = vol.Schema(
 )
 
 
+def _async_remove_stale_entities(
+    hass: HomeAssistant, entry: ConfigEntry, unit_types: dict[int, str]
+) -> None:
+    """Remove ATW-only entities of slots that are no longer ATW.
+
+    The climate entity's unique_id is "<entry>_slot<N>"; the ATW switches and
+    numbers add a "_<key>" suffix, so only the suffixed ones are candidates.
+    """
+    non_atw = {
+        f"{entry.entry_id}_slot{slot_id}_"
+        for slot_id, unit_type in unit_types.items()
+        if unit_type != UNIT_TYPE_ATW
+    }
+    if not non_atw:
+        return
+
+    ent_reg = er.async_get(hass)
+    for reg_entry in list(er.async_entries_for_config_entry(ent_reg, entry.entry_id)):
+        if any(reg_entry.unique_id.startswith(prefix) for prefix in non_atw):
+            _LOGGER.debug(
+                "Removing %s: slot is no longer an ATW unit", reg_entry.entity_id
+            )
+            ent_reg.async_remove(reg_entry.entity_id)
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Hitachi ModBus from a config entry."""
-    units = entry.data.get("discovered_units", [])
-    unit_types = {u["slot_id"]: u.get("unit_type", UNIT_TYPE_VRF) for u in units}
+    units = resolve_units(entry)
+    unit_types = {u["slot_id"]: u["unit_type"] for u in units}
+
+    # A slot whose type was changed away from ATW no longer produces switch and
+    # number entities; drop the ones it left behind instead of leaving them in
+    # the registry as permanently unavailable.
+    _async_remove_stale_entities(hass, entry, unit_types)
+
     coordinator = HitachiModbusCoordinator(hass, entry, unit_types)
 
     # Fetch initial data

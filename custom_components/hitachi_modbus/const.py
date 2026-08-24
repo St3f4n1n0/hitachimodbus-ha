@@ -18,6 +18,13 @@ CONF_SLAVE_ID = "slave_id"
 CONF_N_BASE = "n_base"
 CONF_SCAN_INTERVAL = "scan_interval"
 
+# entry.data key holding the units found during discovery
+CONF_DISCOVERED_UNITS = "discovered_units"
+# entry.options key holding the per-slot type overrides set from the options
+# flow: {"<slot_id>": "vrf" | "rac" | "atw"}.  Options survive as JSON, so the
+# slot ids are stored as strings.
+CONF_UNIT_TYPES = "unit_types"
+
 # Defaults matching the HC-A16MB factory settings
 DEFAULT_PORT = 502
 DEFAULT_SLAVE_ID = 1

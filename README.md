@@ -114,6 +114,18 @@ For each discovered unit, select the type:
 
 The type determines which HA platforms (climate / switch / number) and which modes are available.
 
+### Changing settings later
+
+**Settings → Devices & Services → Hitachi ModBus Gateway → Configure** re-opens
+the polling interval **and the type of every unit**, so a slot set to the wrong
+type during setup can be corrected without removing and re-adding the
+integration.
+
+Changing a type reloads the integration: the unit switches between the §5.2.1
+and §5.2.2 register spaces and its entities are rebuilt. A unit that is no
+longer **ATW** loses its switch and number entities, and those are removed from
+the entity registry rather than left behind as unavailable.
+
 ---
 
 ## Prerequisites
@@ -163,6 +175,9 @@ The **Hitachi Net Configurator** Java application (the official Windows tool for
 
 **The `high2` fan speed disappeared**
 - It was removed on purpose: see [A note on the "High2" fan speed](#a-note-on-the-high2-fan-speed) above. Selecting it never produced a different fan speed on RAC units.
+
+**A unit behaves oddly / shows the wrong modes**
+- Check its type under **Configure** – a RAC or ATW unit left as the default `vrf` exposes modes its hardware does not have. ATW units in particular need `atw`, or they are read from the wrong register space.
 
 **Entities are unavailable after HA restart**
 - This is normal for the first poll cycle. The coordinator fetches data shortly after startup.

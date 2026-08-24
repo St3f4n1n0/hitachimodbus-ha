@@ -3,6 +3,9 @@
 Step 1 – "user":        IP address, slave ID, register base.
 Step 2 – "units":       Summary of discovered units (Ou / Iu).
 Step 3 – "unit_types":  Select VRF / RAC / ATW for each unit.
+
+The options flow re-opens the polling interval and the per-unit type choice,
+so a slot mistyped during setup can be corrected without removing the entry.
 """
 from __future__ import annotations
 
@@ -18,11 +21,13 @@ from homeassistant.data_entry_flow import FlowResult
 import homeassistant.helpers.config_validation as cv
 
 from .const import (
+    CONF_DISCOVERED_UNITS,
     CONF_HOST,
     CONF_N_BASE,
     CONF_PORT,
     CONF_SCAN_INTERVAL,
     CONF_SLAVE_ID,
+    CONF_UNIT_TYPES,
     DEFAULT_N_BASE,
     DEFAULT_PORT,
     DEFAULT_SCAN_INTERVAL,
@@ -36,6 +41,7 @@ from .const import (
     UNIT_TYPE_VRF,
     UNIT_TYPES,
 )
+from .helpers import resolve_units
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -135,7 +141,7 @@ class HitachiModbusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             title = f"Hitachi HC-A ModBus ({config[CONF_HOST]})"
             return self.async_create_entry(
                 title=title,
-                data={**config, "discovered_units": units},
+                data={**config, CONF_DISCOVERED_UNITS: units},
             )
 
         # Build a schema with one selector per unit
@@ -271,7 +277,7 @@ class HitachiModbusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
 
 class HitachiModbusOptionsFlow(config_entries.OptionsFlow):
-    """Allow changing scan interval after initial setup."""
+    """Change the polling interval and the unit types after initial setup."""
 
     def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
         self._config_entry = config_entry
@@ -279,19 +285,51 @@ class HitachiModbusOptionsFlow(config_entries.OptionsFlow):
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
-        if user_input is not None:
-            return self.async_create_entry(title="", data=user_input)
+        entry = self._config_entry
+        units = resolve_units(entry)
 
-        current_interval = self._config_entry.data.get(
-            CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL
+        if user_input is not None:
+            # Types are kept in the options so discovery data stays untouched;
+            # changing one reloads the entry, which rebuilds the entities and
+            # switches the slot between the §5.2.1 and §5.2.2 register spaces.
+            unit_types = {
+                str(unit["slot_id"]): user_input[_type_key(unit["slot_id"])]
+                for unit in units
+                if _type_key(unit["slot_id"]) in user_input
+            }
+            return self.async_create_entry(
+                title="",
+                data={
+                    CONF_SCAN_INTERVAL: user_input[CONF_SCAN_INTERVAL],
+                    CONF_UNIT_TYPES: unit_types,
+                },
+            )
+
+        current_interval = entry.options.get(
+            CONF_SCAN_INTERVAL,
+            entry.data.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL),
         )
+
+        schema_fields: dict = {
+            vol.Required(CONF_SCAN_INTERVAL, default=current_interval): vol.All(
+                int, vol.Range(min=5, max=3600)
+            )
+        }
+        for unit in units:
+            schema_fields[
+                vol.Required(
+                    _type_key(unit["slot_id"]), default=unit["unit_type"]
+                )
+            ] = vol.In(UNIT_TYPES)
+
+        unit_lines = "\n".join(
+            f"• Slot {u['slot_id']}: Ou={u['ou']}, Iu={u['iu']} "
+            f"(currently **{u['unit_type']}**)"
+            for u in units
+        ) or "No units in this entry."
+
         return self.async_show_form(
             step_id="init",
-            data_schema=vol.Schema(
-                {
-                    vol.Optional(
-                        CONF_SCAN_INTERVAL, default=current_interval
-                    ): vol.All(int, vol.Range(min=5, max=3600))
-                }
-            ),
+            data_schema=vol.Schema(schema_fields),
+            description_placeholders={"unit_summary": unit_lines},
         )

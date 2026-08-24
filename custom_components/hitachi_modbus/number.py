@@ -25,9 +25,9 @@ from .const import (
     ATW_READ_START,
     DOMAIN,
     UNIT_TYPE_ATW,
-    UNIT_TYPE_VRF,
 )
 from .coordinator import HitachiModbusCoordinator
+from .helpers import resolve_units
 
 
 @dataclass(frozen=True)
@@ -96,12 +96,12 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     coordinator: HitachiModbusCoordinator = hass.data[DOMAIN][entry.entry_id]
-    units: list[dict] = entry.data.get("discovered_units", [])
+    units: list[dict] = resolve_units(entry)
 
     async_add_entities(
         HitachiATWNumber(coordinator, entry, u["slot_id"], u["ou"], u["iu"], desc)
         for u in units
-        if u.get("unit_type", UNIT_TYPE_VRF) == UNIT_TYPE_ATW
+        if u["unit_type"] == UNIT_TYPE_ATW
         for desc in _ATW_NUMBERS
     )
 

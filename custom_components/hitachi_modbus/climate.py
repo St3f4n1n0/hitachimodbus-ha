@@ -60,9 +60,9 @@ from .const import (
     OFFSET_VALVE_OPENING,
     TEMP_RANGE_BY_TYPE,
     UNIT_TYPE_ATW,
-    UNIT_TYPE_VRF,
 )
 from .coordinator import HitachiModbusCoordinator
+from .helpers import resolve_units
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -101,14 +101,14 @@ async def async_setup_entry(
         name=f"Hitachi HC-A ModBus Gateway ({entry.data.get(CONF_HOST, '')})",
     )
 
-    units: list[dict] = entry.data.get("discovered_units", [])
+    units: list[dict] = resolve_units(entry)
     if not units:
         _LOGGER.warning("No units in config entry – nothing to create")
         return
 
     async_add_entities(
         HitachiClimateEntity(coordinator, entry, u["slot_id"], u["ou"], u["iu"],
-                             u.get("unit_type", UNIT_TYPE_VRF))
+                             u["unit_type"])
         for u in units
     )
 

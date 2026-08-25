@@ -248,9 +248,3 @@ HA_FAN_TO_MODBUS: dict[str, int] = {
     "high": 2,
     "auto": 4,
 }
-
-# Fan speeds accepted from old configurations / automations that were written
-# while "high2" was still offered, so those calls keep working.
-LEGACY_FAN_ALIASES: dict[str, str] = {
-    "high2": "high",
-}

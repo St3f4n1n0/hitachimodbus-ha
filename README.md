@@ -192,8 +192,14 @@ fan at **High**.
 
 The speed is therefore **not offered** by this integration. If a unit reports
 register value `3` (for example because it was set from a wired remote), it is
-shown as `high`, which is what the unit is actually doing. Automations that
-still send `high2` keep working: the value is translated to `high`.
+shown as `high`, which is what the unit is actually doing.
+
+> **Breaking in 1.2.0** — `climate.set_fan_mode` with `fan_mode: high2` is now
+> rejected with *"The fan_mode high2 is not a valid fan_mode: low, medium, high,
+> auto"*. Version 1.1.0 silently translated it to `high`; that shim relied on
+> overriding a Home Assistant method marked `@final` and has been removed.
+> **Update any automation or script that still sends `high2` to send `high`
+> instead** — the two produced identical behaviour anyway.
 
 The **Hitachi Net Configurator** Java application (the official Windows tool for gateway configuration) is available separately and can be requested from your Hitachi HVAC distributor. It is not included in this repository.
 
@@ -210,8 +216,8 @@ The **Hitachi Net Configurator** Java application (the official Windows tool for
 - ATW uses a separate register space (§5.2.2: `5000 + slot_id×200 + offset`). Make sure you selected **atw** as the unit type during setup.
 - Some sensors (water inlet temperature) may read 0 if the corresponding probe is not connected.
 
-**The `high2` fan speed disappeared**
-- It was removed on purpose: see [A note on the "High2" fan speed](#a-note-on-the-high2-fan-speed) above. Selecting it never produced a different fan speed on RAC units.
+**The `high2` fan speed disappeared / an automation fails with "not a valid fan_mode"**
+- It was removed on purpose: see [A note on the "High2" fan speed](#a-note-on-the-high2-fan-speed) above. Selecting it never produced a different fan speed. Replace `high2` with `high` in the automation.
 
 **A fan speed change is not reflected straight away**
 - The gateway relays the command to the indoor unit over H-LINK and only then mirrors it into the status registers, so the integration waits ~3 s after a write before re-reading. Until then the previous value is still shown.

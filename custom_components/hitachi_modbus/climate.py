@@ -43,7 +43,6 @@ from .const import (
     HA_FAN_TO_MODBUS,
     HA_MODE_TO_MODBUS,
     HVAC_MODES_BY_TYPE,
-    LEGACY_FAN_ALIASES,
     MODBUS_TO_HA_FAN,
     MODBUS_TO_HA_MODE,
     OFFSET_ALARM_CODE,
@@ -361,29 +360,13 @@ class HitachiClimateEntity(CoordinatorEntity[HitachiModbusCoordinator], ClimateE
         await self.coordinator.async_write_unit_register(self._slot_id, offset, 0)
         await self.coordinator.async_request_refresh()
 
-    async def async_handle_set_fan_mode_service(self, fan_mode: str) -> None:
-        """Translate retired fan speeds before Home Assistant validates them.
-
-        ClimateEntity checks the requested speed against ``fan_modes`` here and
-        raises before ``async_set_fan_mode`` runs, so an automation still asking
-        for "high2" has to be rewritten at this point rather than further down.
-
-        Note this overrides a method ClimateEntity marks ``@final`` (still the
-        case in 2026.8). ``@final`` is enforced by type checkers, not at
-        runtime, so this works — but it is a deliberate exception, kept only as
-        a migration aid for automations written while "high2" was offered. Drop
-        this method once those have been updated.
-        """
-        await super().async_handle_set_fan_mode_service(
-            LEGACY_FAN_ALIASES.get(fan_mode, fan_mode)
-        )
-
     async def async_set_fan_mode(self, fan_mode: str) -> None:
         if not self._fan_modes:
             return
-        fan_mode = LEGACY_FAN_ALIASES.get(fan_mode, fan_mode)
         modbus_fan = HA_FAN_TO_MODBUS.get(fan_mode)
         if modbus_fan is None:
+            # ClimateEntity validates against fan_modes before calling this, so
+            # this only catches a direct call that bypassed the service layer.
             raise ServiceValidationError(
                 f"Fan mode '{fan_mode}' is not supported by this unit"
             )

@@ -126,12 +126,19 @@ FAN_MODES_BY_TYPE: dict[str, list[str]] = {
 # offsets 4/5 (§5.2.1) are independent and the fan table always lists all five
 # values.  The restriction is indoor-unit behaviour, not a gateway rule.
 #
-# On VRF units dehumidification runs at reduced airflow and the official remote
-# offers only Low and Medium; the higher speeds are accepted over Modbus but
-# not carried out.  A unit type absent from this table keeps its full list.
+# Measured on a VRF indoor unit (§5.2.1 slot, fan cmd offset 5 / status 11):
+#   Cool, write 1 (Medium) -> cmd 1, status 1      command honoured
+#   Cool, write 2 (High)   -> cmd 2, status 2      command honoured
+#   Dry,  write 1 (Medium) -> cmd 0, status 0      reset by the unit
+# In Dry the unit pins the fan to Low and overwrites the register, so even a
+# raw Modbus write does not stick.  Offering any other speed there would let
+# the user pick something that silently reverts, which is what the official
+# remote's own Low/Medium choice does too.
+#
+# A unit type absent from this table keeps its full list.
 
 FAN_MODES_DRY_BY_TYPE: dict[str, list[str]] = {
-    UNIT_TYPE_VRF: ["low", "medium"],
+    UNIT_TYPE_VRF: ["low"],
 }
 
 # ── Per-type temperature range ─────────────────────────────────────────────

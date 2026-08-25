@@ -36,7 +36,7 @@ A Home Assistant custom integration for **Hitachi HC-A(8/16/64)MB ModBus gateway
 - On/Off, HVAC mode (Cool / Heat / Dry / Fan Only / Auto – per type)
 - Target temperature setpoint
 - Fan speed control (VRF/RAC only): `low` / `medium` / `high` / `auto`
-  (VRF units offer only `low` / `medium` while in **Dry** mode)
+  (VRF units are fixed at `low` while in **Dry** mode)
 - Current temperature (room inlet sensor for VRF/RAC; actual DHW tank temperature for ATW)
 - Extra state attributes: pipe temperatures, alarm code, valve opening, operation state
 
@@ -146,18 +146,28 @@ The register addresses and protocol details implemented in this integration are 
 
 A copy of the relevant documentation pages is included in the [`Documentation/`](Documentation/) folder of this repository.
 
-### Fan speeds in Dry mode
+### Fan speed in Dry mode
 
 PMML0351A documents no interaction between the mode and fan registers — offsets
-`4`/`5` are independent and the fan table always lists all five values. In
-practice a VRF indoor unit dehumidifies at reduced airflow: the official remote
-offers only **Low** and **Medium** in Dry, and the higher speeds are accepted
-over Modbus without being carried out.
+`4`/`5` are independent and the fan table always lists all five values. The
+restriction is indoor-unit behaviour, and it is stronger than the remote
+suggests. Measured on a VRF indoor unit, writing the fan command register:
 
-The integration therefore narrows a VRF unit's fan list to `low` / `medium`
-while it is in Dry, both in the dropdown and for `climate.set_fan_mode` service
-calls. RAC and ATW units are unaffected. The *reported* speed is never hidden:
-if a unit reports a higher speed in Dry, that is what the state shows.
+| Mode | Written | Command reg. reads back | Status reg. |
+|---|---|---|---|
+| Cool | `1` (Medium) | `1` | `1` |
+| Cool | `2` (High) | `2` | `2` |
+| Dry | `1` (Medium) | **`0`** | **`0`** |
+
+In Dry the unit pins the fan to Low and overwrites the register: even a raw
+Modbus write does not stick. The official remote still offers Low and Medium in
+Dry, but the Medium selection does not reach the gateway either.
+
+A VRF unit's fan list is therefore narrowed to `low` alone while it is in Dry,
+so the UI cannot offer a speed that silently reverts; `climate.set_fan_mode`
+raises for anything else. RAC and ATW units are unaffected. The *reported*
+speed is never hidden: if a unit reports a higher speed in Dry, that is what
+the state shows.
 
 ### A note on the "High2" fan speed
 
@@ -192,7 +202,8 @@ The **Hitachi Net Configurator** Java application (the official Windows tool for
 
 **A fan speed change is not reflected straight away**
 - The gateway relays the command to the indoor unit over H-LINK and only then mirrors it into the status registers, so the integration waits ~3 s after a write before re-reading. Until then the previous value is still shown.
-- If a speed never takes effect, check the unit is not in Dry (VRF units run Dry at `low`/`medium` only) and that the central lock register (offset `8`, bit 3 = Fan) is not blocking fan control.
+- If a speed never takes effect at all, check in this order: the unit is not in Dry (a VRF unit runs Dry at `low`, full stop — see above); the central lock register (offset `8`, bit 3 = Fan) is `0`; the log shows no `Hitachi gateway refused writing …` error.
+- To check a register yourself, use `hitachi_modbus.read_register`. The address is `n_base + slot_id × 32 + offset` — for slot 5 with the default base that is `2000 + 160 + offset`, so the fan command is `2165` and the fan status is `2171`. The value appears as a persistent notification.
 
 **A unit behaves oddly / shows the wrong modes**
 - Check its type under **Configure** – a RAC or ATW unit left as the default `vrf` exposes modes its hardware does not have. ATW units in particular need `atw`, or they are read from the wrong register space.

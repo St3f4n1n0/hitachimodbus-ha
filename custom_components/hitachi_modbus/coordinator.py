@@ -12,6 +12,7 @@ from .modbus_compat import modbus_read, modbus_write
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.debounce import Debouncer
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
@@ -184,16 +185,27 @@ class HitachiModbusCoordinator(DataUpdateCoordinator[dict[int, list[int]]]):
 
     async def async_write_unit_register(
         self, slot_id: int, offset: int, value: int
-    ) -> bool:
+    ) -> None:
         """Write one register for a specific indoor unit slot.
 
         Automatically selects §5.2.1 (VRF/RAC) or §5.2.2 (ATW) addressing.
+
+        Raises HomeAssistantError if the gateway rejects the write, so a
+        command that did not get through surfaces in the UI instead of the
+        entity quietly snapping back on the next poll.  Note that this only
+        covers a refused write: a command the gateway accepts and the indoor
+        unit then overrides (the fan in Dry mode, for one) still succeeds here.
         """
         if self._unit_types.get(slot_id) == UNIT_TYPE_ATW:
             address = self._unit_base_522(slot_id, offset)
         else:
             address = self._unit_base_521(slot_id) + offset
-        return await self.async_write_register(address, value)
+
+        if not await self.async_write_register(address, value):
+            raise HomeAssistantError(
+                f"Hitachi gateway refused writing {value} to register {address} "
+                f"(slot {slot_id}, offset {offset})"
+            )
 
     # ── DataUpdateCoordinator update ───────────────────────────────────────
 

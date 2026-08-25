@@ -1,7 +1,7 @@
 # Hitachi ModBus Gateway – Home Assistant Integration
 
 [![HACS Custom Repository](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://github.com/hacs/integration)
-[![HA Version](https://img.shields.io/badge/Home%20Assistant-2024.2%2B-blue)](https://www.home-assistant.io/)
+[![HA Version](https://img.shields.io/badge/Home%20Assistant-2024.11%2B-blue)](https://www.home-assistant.io/)
 
 A Home Assistant custom integration for **Hitachi HC-A(8/16/64)MB ModBus gateways**, enabling local control of Hitachi indoor units (VRF, RAC, ATW) via Modbus TCP.
 
@@ -132,7 +132,7 @@ the entity registry rather than left behind as unavailable.
 ## Prerequisites
 
 - The HC-A gateway must be reachable from the Home Assistant host over TCP (default port 502).
-- `pymodbus` is declared in `manifest.json` and installed automatically by Home Assistant on first setup.
+- `pymodbus` is declared in `manifest.json` and installed automatically by Home Assistant on first setup. No upper bound is pinned: Home Assistant constrains the version itself (`pymodbus==3.13.1` in 2026.8), and `modbus_compat.py` adapts to the argument renames between pymodbus releases.
 - For ATW units, the gateway must be an HC-A16MB or HC-A64MB (ATW §5.2.2 address space is not available on HC-A8MB).
 
 ---

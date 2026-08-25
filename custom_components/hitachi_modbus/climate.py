@@ -117,8 +117,6 @@ class HitachiClimateEntity(CoordinatorEntity[HitachiModbusCoordinator], ClimateE
 
     _attr_has_entity_name = True
     _attr_temperature_unit = UnitOfTemperature.CELSIUS
-    # TURN_ON / TURN_OFF are declared explicitly in __init__ (HA 2024.2+)
-    _enable_turn_on_off_backwards_compatibility = False
 
     def __init__(
         self,
@@ -369,6 +367,12 @@ class HitachiClimateEntity(CoordinatorEntity[HitachiModbusCoordinator], ClimateE
         ClimateEntity checks the requested speed against ``fan_modes`` here and
         raises before ``async_set_fan_mode`` runs, so an automation still asking
         for "high2" has to be rewritten at this point rather than further down.
+
+        Note this overrides a method ClimateEntity marks ``@final`` (still the
+        case in 2026.8). ``@final`` is enforced by type checkers, not at
+        runtime, so this works — but it is a deliberate exception, kept only as
+        a migration aid for automations written while "high2" was offered. Drop
+        this method once those have been updated.
         """
         await super().async_handle_set_fan_mode_service(
             LEGACY_FAN_ALIASES.get(fan_mode, fan_mode)

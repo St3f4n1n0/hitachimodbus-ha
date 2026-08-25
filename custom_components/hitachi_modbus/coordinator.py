@@ -95,6 +95,7 @@ class HitachiModbusCoordinator(DataUpdateCoordinator[dict[int, list[int]]]):
         super().__init__(
             hass,
             _LOGGER,
+            config_entry=entry,
             name=DOMAIN,
             update_interval=timedelta(seconds=scan_interval),
             # async_request_refresh() is called right after every write; delay

@@ -16,9 +16,14 @@ from typing import Any
 import voluptuous as vol
 
 from homeassistant import config_entries
+from homeassistant.config_entries import ConfigFlowResult
 from homeassistant.core import callback
-from homeassistant.data_entry_flow import FlowResult
 import homeassistant.helpers.config_validation as cv
+from homeassistant.helpers.selector import (
+    SelectSelector,
+    SelectSelectorConfig,
+    SelectSelectorMode,
+)
 
 from .const import (
     CONF_DISCOVERED_UNITS,
@@ -86,7 +91,7 @@ class HitachiModbusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
+    ) -> ConfigFlowResult:
         errors: dict[str, str] = {}
 
         if user_input is not None:
@@ -115,7 +120,7 @@ class HitachiModbusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     async def async_step_units(
         self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
+    ) -> ConfigFlowResult:
         if user_input is not None:
             return await self.async_step_unit_types()
 
@@ -134,7 +139,7 @@ class HitachiModbusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     async def async_step_unit_types(
         self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
+    ) -> ConfigFlowResult:
         """One dropdown per discovered unit: VRF / RAC / ATW."""
         units: list[dict] = self._discovery_data["units"]
         config: dict = self._discovery_data["config"]
@@ -177,7 +182,7 @@ class HitachiModbusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     def async_get_options_flow(
         config_entry: config_entries.ConfigEntry,
     ) -> HitachiModbusOptionsFlow:
-        return HitachiModbusOptionsFlow(config_entry)
+        return HitachiModbusOptionsFlow()
 
     # ── Discovery ──────────────────────────────────────────────────────────
 
@@ -284,15 +289,12 @@ class HitachiModbusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
 
 class HitachiModbusOptionsFlow(config_entries.OptionsFlow):
-    """Change the polling interval and the unit types after initial setup."""
-
-    def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
-        self._config_entry = config_entry
+    """Change the polling interval and the per-unit settings after setup."""
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
-        entry = self._config_entry
+    ) -> ConfigFlowResult:
+        entry = self.config_entry
         units = resolve_units(entry)
 
         if user_input is not None:
@@ -343,7 +345,13 @@ class HitachiModbusOptionsFlow(config_entries.OptionsFlow):
                     vol.Required(
                         _dry_fan_key(unit["slot_id"]), default=unit[CONF_DRY_FAN]
                     )
-                ] = vol.In(DRY_FAN_OPTIONS)
+                ] = SelectSelector(
+                    SelectSelectorConfig(
+                        options=DRY_FAN_OPTIONS,
+                        translation_key=CONF_DRY_FAN,
+                        mode=SelectSelectorMode.DROPDOWN,
+                    )
+                )
 
         unit_lines = "\n".join(
             f"• Slot {u['slot_id']}: Ou={u['ou']}, Iu={u['iu']} "

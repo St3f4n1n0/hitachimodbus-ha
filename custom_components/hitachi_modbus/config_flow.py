@@ -16,12 +16,18 @@ from typing import Any
 import voluptuous as vol
 
 from homeassistant import config_entries
+from homeassistant.config_entries import ConfigFlowResult
 from homeassistant.core import callback
-from homeassistant.data_entry_flow import FlowResult
 import homeassistant.helpers.config_validation as cv
+from homeassistant.helpers.selector import (
+    SelectSelector,
+    SelectSelectorConfig,
+    SelectSelectorMode,
+)
 
 from .const import (
     CONF_DISCOVERED_UNITS,
+    CONF_DRY_FAN,
     CONF_HOST,
     CONF_N_BASE,
     CONF_PORT,
@@ -33,11 +39,13 @@ from .const import (
     DEFAULT_SCAN_INTERVAL,
     DEFAULT_SLAVE_ID,
     DOMAIN,
+    DRY_FAN_OPTIONS,
     MAX_UNITS,
     MODBUS_STRIDE,
     OFFSET_EXIST,
     OFFSET_SYS_ADDR,
     OFFSET_UNIT_ADDR,
+    UNIT_TYPE_ATW,
     UNIT_TYPE_VRF,
     UNIT_TYPES,
 )
@@ -62,9 +70,13 @@ STEP_USER_SCHEMA = vol.Schema(
     }
 )
 
-# Key used to store the type selection for each slot in the form
+# Keys used for the per-slot fields in the forms
 def _type_key(slot_id: int) -> str:
     return f"type_slot_{slot_id}"
+
+
+def _dry_fan_key(slot_id: int) -> str:
+    return f"dry_fan_slot_{slot_id}"
 
 
 class HitachiModbusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
@@ -79,7 +91,7 @@ class HitachiModbusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
+    ) -> ConfigFlowResult:
         errors: dict[str, str] = {}
 
         if user_input is not None:
@@ -108,7 +120,7 @@ class HitachiModbusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     async def async_step_units(
         self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
+    ) -> ConfigFlowResult:
         if user_input is not None:
             return await self.async_step_unit_types()
 
@@ -127,7 +139,7 @@ class HitachiModbusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     async def async_step_unit_types(
         self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
+    ) -> ConfigFlowResult:
         """One dropdown per discovered unit: VRF / RAC / ATW."""
         units: list[dict] = self._discovery_data["units"]
         config: dict = self._discovery_data["config"]
@@ -170,7 +182,7 @@ class HitachiModbusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     def async_get_options_flow(
         config_entry: config_entries.ConfigEntry,
     ) -> HitachiModbusOptionsFlow:
-        return HitachiModbusOptionsFlow(config_entry)
+        return HitachiModbusOptionsFlow()
 
     # ── Discovery ──────────────────────────────────────────────────────────
 
@@ -277,31 +289,38 @@ class HitachiModbusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
 
 class HitachiModbusOptionsFlow(config_entries.OptionsFlow):
-    """Change the polling interval and the unit types after initial setup."""
-
-    def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
-        self._config_entry = config_entry
+    """Change the polling interval and the per-unit settings after setup."""
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
-        entry = self._config_entry
+    ) -> ConfigFlowResult:
+        entry = self.config_entry
         units = resolve_units(entry)
 
         if user_input is not None:
-            # Types are kept in the options so discovery data stays untouched;
-            # changing one reloads the entry, which rebuilds the entities and
-            # switches the slot between the §5.2.1 and §5.2.2 register spaces.
+            # Settings are kept in the options so discovery data stays
+            # untouched; changing one reloads the entry, which rebuilds the
+            # entities and switches the slot between the §5.2.1 and §5.2.2
+            # register spaces.
             unit_types = {
                 str(unit["slot_id"]): user_input[_type_key(unit["slot_id"])]
                 for unit in units
                 if _type_key(unit["slot_id"]) in user_input
             }
+            # ATW units have no fan, so no Dry field is shown for them; carry
+            # their stored value over so it survives a round trip through ATW.
+            dry_fan = dict(entry.options.get(CONF_DRY_FAN, {}))
+            for unit in units:
+                key = _dry_fan_key(unit["slot_id"])
+                if key in user_input:
+                    dry_fan[str(unit["slot_id"])] = user_input[key]
+
             return self.async_create_entry(
                 title="",
                 data={
                     CONF_SCAN_INTERVAL: user_input[CONF_SCAN_INTERVAL],
                     CONF_UNIT_TYPES: unit_types,
+                    CONF_DRY_FAN: dry_fan,
                 },
             )
 
@@ -321,6 +340,18 @@ class HitachiModbusOptionsFlow(config_entries.OptionsFlow):
                     _type_key(unit["slot_id"]), default=unit["unit_type"]
                 )
             ] = vol.In(UNIT_TYPES)
+            if unit["unit_type"] != UNIT_TYPE_ATW:
+                schema_fields[
+                    vol.Required(
+                        _dry_fan_key(unit["slot_id"]), default=unit[CONF_DRY_FAN]
+                    )
+                ] = SelectSelector(
+                    SelectSelectorConfig(
+                        options=DRY_FAN_OPTIONS,
+                        translation_key=CONF_DRY_FAN,
+                        mode=SelectSelectorMode.DROPDOWN,
+                    )
+                )
 
         unit_lines = "\n".join(
             f"• Slot {u['slot_id']}: Ou={u['ou']}, Iu={u['iu']} "

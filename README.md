@@ -1,7 +1,7 @@
 # Hitachi ModBus Gateway – Home Assistant Integration
 
 [![HACS Custom Repository](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://github.com/hacs/integration)
-[![HA Version](https://img.shields.io/badge/Home%20Assistant-2024.2%2B-blue)](https://www.home-assistant.io/)
+[![HA Version](https://img.shields.io/badge/Home%20Assistant-2024.11%2B-blue)](https://www.home-assistant.io/)
 
 A Home Assistant custom integration for **Hitachi HC-A(8/16/64)MB ModBus gateways**, enabling local control of Hitachi indoor units (VRF, RAC, ATW) via Modbus TCP.
 
@@ -36,6 +36,7 @@ A Home Assistant custom integration for **Hitachi HC-A(8/16/64)MB ModBus gateway
 - On/Off, HVAC mode (Cool / Heat / Dry / Fan Only / Auto – per type)
 - Target temperature setpoint
 - Fan speed control (VRF/RAC only): `low` / `medium` / `high` / `auto`
+  (per-unit option for indoor units that pin the fan in **Dry** mode)
 - Current temperature (room inlet sensor for VRF/RAC; actual DHW tank temperature for ATW)
 - Extra state attributes: pipe temperatures, alarm code, valve opening, operation state
 
@@ -131,7 +132,7 @@ the entity registry rather than left behind as unavailable.
 ## Prerequisites
 
 - The HC-A gateway must be reachable from the Home Assistant host over TCP (default port 502).
-- `pymodbus` is declared in `manifest.json` and installed automatically by Home Assistant on first setup.
+- `pymodbus` is declared in `manifest.json` and installed automatically by Home Assistant on first setup. No upper bound is pinned: Home Assistant constrains the version itself (`pymodbus==3.13.1` in 2026.8), and `modbus_compat.py` adapts to the argument renames between pymodbus releases.
 - For ATW units, the gateway must be an HC-A16MB or HC-A64MB (ATW §5.2.2 address space is not available on HC-A8MB).
 
 ---
@@ -145,6 +146,42 @@ The register addresses and protocol details implemented in this integration are 
 
 A copy of the relevant documentation pages is included in the [`Documentation/`](Documentation/) folder of this repository.
 
+### Fan speed in Dry mode
+
+PMML0351A documents no interaction between the mode and fan registers — offsets
+`4`/`5` are independent and the fan table always lists all five values. What
+happens in Dry is indoor-unit behaviour, and it is not consistent even within
+one unit type. Two VRF units on the same gateway, measured by writing the fan
+command register directly:
+
+| Unit | Mode | Written | Command reg. | Status reg. |
+|---|---|---|---|---|
+| Ou15 Iu1 | Cool | `1` (Medium) | `1` | `1` |
+| Ou15 Iu1 | Cool | `2` (High) | `2` | `2` |
+| Ou15 Iu1 | Dry | `1` (Medium) | **`0`** | **`0`** |
+| Ou0 Iu1 | Dry | `2` (High) | `2` | `2` |
+
+The first unit pins the fan to Low in Dry and overwrites the register — even a
+raw Modbus write does not stick, and its official remote's Medium selection
+never reaches the gateway either. The second dehumidifies at High quite happily.
+Nothing readable distinguishes them in advance.
+
+It is therefore a **per-unit setting**, under
+**Configure → Slot N – fan in Dry mode**:
+
+| Value | Behaviour |
+|---|---|
+| `all` (default) | Offer every speed, like the official remote does |
+| `low` | This unit pins Low in Dry: offer only `low` there, so the UI never proposes a speed that silently reverts |
+
+Outside Dry the full list always applies, and RAC and ATW units are unaffected.
+The *reported* speed is never narrowed: whatever the unit says it is doing is
+what the state shows.
+
+To find out which setting a unit needs, put it in Dry, write a higher speed to
+its fan command register with `hitachi_modbus.write_register`, wait a few
+seconds and read it back — see the troubleshooting section for the addresses.
+
 ### A note on the "High2" fan speed
 
 PMML0351A defines fan register value `3` as **High2** (also called *High H*), but
@@ -155,8 +192,14 @@ fan at **High**.
 
 The speed is therefore **not offered** by this integration. If a unit reports
 register value `3` (for example because it was set from a wired remote), it is
-shown as `high`, which is what the unit is actually doing. Automations that
-still send `high2` keep working: the value is translated to `high`.
+shown as `high`, which is what the unit is actually doing.
+
+> **Breaking in 1.2.0** — `climate.set_fan_mode` with `fan_mode: high2` is now
+> rejected with *"The fan_mode high2 is not a valid fan_mode: low, medium, high,
+> auto"*. Version 1.1.0 silently translated it to `high`; that shim relied on
+> overriding a Home Assistant method marked `@final` and has been removed.
+> **Update any automation or script that still sends `high2` to send `high`
+> instead** — the two produced identical behaviour anyway.
 
 The **Hitachi Net Configurator** Java application (the official Windows tool for gateway configuration) is available separately and can be requested from your Hitachi HVAC distributor. It is not included in this repository.
 
@@ -173,8 +216,13 @@ The **Hitachi Net Configurator** Java application (the official Windows tool for
 - ATW uses a separate register space (§5.2.2: `5000 + slot_id×200 + offset`). Make sure you selected **atw** as the unit type during setup.
 - Some sensors (water inlet temperature) may read 0 if the corresponding probe is not connected.
 
-**The `high2` fan speed disappeared**
-- It was removed on purpose: see [A note on the "High2" fan speed](#a-note-on-the-high2-fan-speed) above. Selecting it never produced a different fan speed on RAC units.
+**The `high2` fan speed disappeared / an automation fails with "not a valid fan_mode"**
+- It was removed on purpose: see [A note on the "High2" fan speed](#a-note-on-the-high2-fan-speed) above. Selecting it never produced a different fan speed. Replace `high2` with `high` in the automation.
+
+**A fan speed change is not reflected straight away**
+- The gateway relays the command to the indoor unit over H-LINK and only then mirrors it into the status registers, so the integration waits ~3 s after a write before re-reading. Until then the previous value is still shown.
+- If a speed never takes effect at all, check in this order: the unit is not one that pins the fan in Dry (see above — set **fan in Dry** to `low` for it); the central lock register (offset `8`, bit 3 = Fan) is `0`; the log shows no `Hitachi gateway refused writing …` error.
+- To check a register yourself, use `hitachi_modbus.read_register`. The address is `n_base + slot_id × 32 + offset` — for slot 5 with the default base that is `2000 + 160 + offset`, so the fan command is `2165` and the fan status is `2171`. The value appears as a persistent notification.
 
 **A unit behaves oddly / shows the wrong modes**
 - Check its type under **Configure** – a RAC or ATW unit left as the default `vrf` exposes modes its hardware does not have. ATW units in particular need `atw`, or they are read from the wrong register space.

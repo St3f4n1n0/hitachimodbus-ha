@@ -34,13 +34,15 @@ from .const import (
     ATW_OFFSET_WATER_INLET_TEMP,
     ATW_OFFSET_WATER_OUTLET_TEMP,
     ATW_READ_START,
+    CONF_DRY_FAN,
     CONF_HOST,
     DOMAIN,
+    DRY_FAN_LOW,
     FAN_MODES_BY_TYPE,
+    FAN_MODES_DRY_LOW,
     HA_FAN_TO_MODBUS,
     HA_MODE_TO_MODBUS,
     HVAC_MODES_BY_TYPE,
-    LEGACY_FAN_ALIASES,
     MODBUS_TO_HA_FAN,
     MODBUS_TO_HA_MODE,
     OFFSET_ALARM_CODE,
@@ -106,11 +108,7 @@ async def async_setup_entry(
         _LOGGER.warning("No units in config entry – nothing to create")
         return
 
-    async_add_entities(
-        HitachiClimateEntity(coordinator, entry, u["slot_id"], u["ou"], u["iu"],
-                             u["unit_type"])
-        for u in units
-    )
+    async_add_entities(HitachiClimateEntity(coordinator, entry, u) for u in units)
 
 
 class HitachiClimateEntity(CoordinatorEntity[HitachiModbusCoordinator], ClimateEntity):
@@ -118,33 +116,37 @@ class HitachiClimateEntity(CoordinatorEntity[HitachiModbusCoordinator], ClimateE
 
     _attr_has_entity_name = True
     _attr_temperature_unit = UnitOfTemperature.CELSIUS
-    # TURN_ON / TURN_OFF are declared explicitly in __init__ (HA 2024.2+)
-    _enable_turn_on_off_backwards_compatibility = False
 
     def __init__(
         self,
         coordinator: HitachiModbusCoordinator,
         entry: ConfigEntry,
-        slot_id: int,
-        ou: int,
-        iu: int,
-        unit_type: str,
+        unit: dict,
     ) -> None:
         super().__init__(coordinator)
+        slot_id: int = unit["slot_id"]
+        unit_type: str = unit["unit_type"]
         self._slot_id = slot_id
-        self._ou = ou
-        self._iu = iu
+        self._ou = unit["ou"]
+        self._iu = unit["iu"]
         self._unit_type = unit_type
         self._entry = entry
 
         self._attr_unique_id = f"{entry.entry_id}_slot{slot_id}"
-        self._attr_name = f"Ou{ou} Iu{iu}"
+        self._attr_name = f"Ou{self._ou} Iu{self._iu}"
 
         hvac_strs = HVAC_MODES_BY_TYPE[unit_type]
         self._attr_hvac_modes = [_STR_TO_HVAC[m] for m in hvac_strs]
 
+        # Full list of speeds this unit type can be set to, and the reduced
+        # list that applies while it is dehumidifying (see fan_modes).  Whether
+        # Dry is restricted is a property of the individual indoor unit, so it
+        # comes from the options flow rather than from the unit type.
         fan_list = FAN_MODES_BY_TYPE[unit_type]
-        self._attr_fan_modes = fan_list if fan_list else None
+        self._fan_modes: list[str] | None = fan_list or None
+        self._fan_modes_dry: list[str] | None = (
+            FAN_MODES_DRY_LOW if unit.get(CONF_DRY_FAN) == DRY_FAN_LOW else None
+        )
 
         temp_min, temp_max, temp_step = TEMP_RANGE_BY_TYPE[unit_type]
         self._attr_min_temp = temp_min
@@ -156,7 +158,7 @@ class HitachiClimateEntity(CoordinatorEntity[HitachiModbusCoordinator], ClimateE
             | ClimateEntityFeature.TURN_ON
             | ClimateEntityFeature.TURN_OFF
         )
-        if fan_list:
+        if self._fan_modes:
             features |= ClimateEntityFeature.FAN_MODE
         self._attr_supported_features = features
 
@@ -233,17 +235,32 @@ class HitachiClimateEntity(CoordinatorEntity[HitachiModbusCoordinator], ClimateE
         return _STR_TO_HVAC.get(ha_str, HVACMode.COOL)
 
     @property
+    def fan_modes(self) -> list[str] | None:
+        """Speeds that can be selected right now.
+
+        Some indoor units pin the fan to Low while dehumidifying and overwrite
+        the register, so a higher speed is accepted and then silently reverts.
+        Units configured that way (Dry fan = "low") offer only Low here.
+        ClimateEntity validates set_fan_mode against this list, so it covers
+        service calls as well as the dropdown.
+        """
+        if self._fan_modes and self._fan_modes_dry and self.hvac_mode == HVACMode.DRY:
+            return self._fan_modes_dry
+        return self._fan_modes
+
+    @property
     def fan_mode(self) -> str | None:
-        if not self._attr_fan_modes:
+        if not self._fan_modes:
             return None
         val = self._reg(OFFSET_FAN_STATUS)
         if val is None:
             return None
         mode = MODBUS_TO_HA_FAN.get(val)
-        if mode not in self._attr_fan_modes:
-            # An unknown register value (or a speed this unit type does not
-            # expose) must not be published: HA rejects a fan_mode that is not
-            # in fan_modes and the entity would go into an error state.
+        if mode is None or mode not in self._fan_modes:
+            # Only genuinely unknown register values are withheld.  What the
+            # unit reports is always published otherwise, even when the current
+            # mode narrows the selectable list, so the state keeps showing the
+            # speed the unit is really running at.
             _LOGGER.debug(
                 "Slot %d reported unsupported fan register value %s",
                 self._slot_id,
@@ -343,23 +360,13 @@ class HitachiClimateEntity(CoordinatorEntity[HitachiModbusCoordinator], ClimateE
         await self.coordinator.async_write_unit_register(self._slot_id, offset, 0)
         await self.coordinator.async_request_refresh()
 
-    async def async_handle_set_fan_mode_service(self, fan_mode: str) -> None:
-        """Translate retired fan speeds before Home Assistant validates them.
-
-        ClimateEntity checks the requested speed against ``fan_modes`` here and
-        raises before ``async_set_fan_mode`` runs, so an automation still asking
-        for "high2" has to be rewritten at this point rather than further down.
-        """
-        await super().async_handle_set_fan_mode_service(
-            LEGACY_FAN_ALIASES.get(fan_mode, fan_mode)
-        )
-
     async def async_set_fan_mode(self, fan_mode: str) -> None:
-        if not self._attr_fan_modes:
+        if not self._fan_modes:
             return
-        fan_mode = LEGACY_FAN_ALIASES.get(fan_mode, fan_mode)
         modbus_fan = HA_FAN_TO_MODBUS.get(fan_mode)
         if modbus_fan is None:
+            # ClimateEntity validates against fan_modes before calling this, so
+            # this only catches a direct call that bypassed the service layer.
             raise ServiceValidationError(
                 f"Fan mode '{fan_mode}' is not supported by this unit"
             )

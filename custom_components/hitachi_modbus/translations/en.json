@@ -51,25 +51,41 @@
     "step": {
       "init": {
         "title": "Hitachi ModBus – Options",
-        "description": "Adjust the polling interval and correct the type of any unit.\n\n{unit_summary}\n\n**VRF** – Variable Refrigerant Flow (multi-split system)\n**RAC** – Room Air Conditioner (single-split wall unit)\n**ATW** – Air to Water (hydronic heat pump)\n\nChanging a type reloads the integration and rebuilds that unit's entities.",
+        "description": "Adjust the polling interval, correct the type of any unit, and set how each unit behaves in Dry mode.\n\n{unit_summary}\n\n**VRF** – Variable Refrigerant Flow (multi-split system)\n**RAC** – Room Air Conditioner (single-split wall unit)\n**ATW** – Air to Water (hydronic heat pump)\n\n**Fan in Dry** – some indoor units pin the fan to Low while dehumidifying and ignore any other speed. Set *low* for those, so the UI stops offering speeds that silently revert; leave *all* otherwise.\n\nChanging a type reloads the integration and rebuilds that unit's entities.",
         "data": {
           "scan_interval": "Polling interval (seconds)",
           "type_slot_0": "Slot 0 type",
+          "dry_fan_slot_0": "Slot 0 – fan in Dry mode",
           "type_slot_1": "Slot 1 type",
+          "dry_fan_slot_1": "Slot 1 – fan in Dry mode",
           "type_slot_2": "Slot 2 type",
+          "dry_fan_slot_2": "Slot 2 – fan in Dry mode",
           "type_slot_3": "Slot 3 type",
+          "dry_fan_slot_3": "Slot 3 – fan in Dry mode",
           "type_slot_4": "Slot 4 type",
+          "dry_fan_slot_4": "Slot 4 – fan in Dry mode",
           "type_slot_5": "Slot 5 type",
+          "dry_fan_slot_5": "Slot 5 – fan in Dry mode",
           "type_slot_6": "Slot 6 type",
+          "dry_fan_slot_6": "Slot 6 – fan in Dry mode",
           "type_slot_7": "Slot 7 type",
+          "dry_fan_slot_7": "Slot 7 – fan in Dry mode",
           "type_slot_8": "Slot 8 type",
+          "dry_fan_slot_8": "Slot 8 – fan in Dry mode",
           "type_slot_9": "Slot 9 type",
+          "dry_fan_slot_9": "Slot 9 – fan in Dry mode",
           "type_slot_10": "Slot 10 type",
+          "dry_fan_slot_10": "Slot 10 – fan in Dry mode",
           "type_slot_11": "Slot 11 type",
+          "dry_fan_slot_11": "Slot 11 – fan in Dry mode",
           "type_slot_12": "Slot 12 type",
+          "dry_fan_slot_12": "Slot 12 – fan in Dry mode",
           "type_slot_13": "Slot 13 type",
+          "dry_fan_slot_13": "Slot 13 – fan in Dry mode",
           "type_slot_14": "Slot 14 type",
-          "type_slot_15": "Slot 15 type"
+          "dry_fan_slot_14": "Slot 14 – fan in Dry mode",
+          "type_slot_15": "Slot 15 type",
+          "dry_fan_slot_15": "Slot 15 – fan in Dry mode"
         }
       }
     }
@@ -105,6 +121,14 @@
           "name": "Value",
           "description": "16-bit unsigned value to write (0–65535)."
         }
+      }
+    }
+  },
+  "selector": {
+    "dry_fan": {
+      "options": {
+        "all": "All speeds",
+        "low": "Low only (unit pins Low in Dry)"
       }
     }
   }

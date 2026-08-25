@@ -51,26 +51,50 @@
     "step": {
       "init": {
         "title": "Hitachi ModBus – Opzioni",
-        "description": "Modifica l'intervallo di polling e correggi il tipo di ogni unità.\n\n{unit_summary}\n\n**VRF** – Variable Refrigerant Flow (sistema multi-split)\n**RAC** – Room Air Conditioner (mono-split a parete)\n**ATW** – Air to Water (pompa di calore idronica)\n\nCambiare un tipo ricarica l'integrazione e ricrea le entità di quell'unità.",
+        "description": "Modifica l'intervallo di polling, correggi il tipo di ogni unità e imposta il comportamento in deumidificazione.\n\n{unit_summary}\n\n**VRF** – Variable Refrigerant Flow (sistema multi-split)\n**RAC** – Room Air Conditioner (mono-split a parete)\n**ATW** – Air to Water (pompa di calore idronica)\n\n**Ventola in Dry** – alcune unità interne bloccano la ventola su bassa durante la deumidificazione e ignorano qualsiasi altra velocità. Per quelle imposta *solo bassa*, così l'interfaccia smette di proporre velocità che tornano indietro da sole; per le altre lascia *tutte*.\n\nCambiare un tipo ricarica l'integrazione e ricrea le entità di quell'unità.",
         "data": {
           "scan_interval": "Intervallo di polling (secondi)",
           "type_slot_0": "Tipo slot 0",
+          "dry_fan_slot_0": "Slot 0 – ventola in Dry",
           "type_slot_1": "Tipo slot 1",
+          "dry_fan_slot_1": "Slot 1 – ventola in Dry",
           "type_slot_2": "Tipo slot 2",
+          "dry_fan_slot_2": "Slot 2 – ventola in Dry",
           "type_slot_3": "Tipo slot 3",
+          "dry_fan_slot_3": "Slot 3 – ventola in Dry",
           "type_slot_4": "Tipo slot 4",
+          "dry_fan_slot_4": "Slot 4 – ventola in Dry",
           "type_slot_5": "Tipo slot 5",
+          "dry_fan_slot_5": "Slot 5 – ventola in Dry",
           "type_slot_6": "Tipo slot 6",
+          "dry_fan_slot_6": "Slot 6 – ventola in Dry",
           "type_slot_7": "Tipo slot 7",
+          "dry_fan_slot_7": "Slot 7 – ventola in Dry",
           "type_slot_8": "Tipo slot 8",
+          "dry_fan_slot_8": "Slot 8 – ventola in Dry",
           "type_slot_9": "Tipo slot 9",
+          "dry_fan_slot_9": "Slot 9 – ventola in Dry",
           "type_slot_10": "Tipo slot 10",
+          "dry_fan_slot_10": "Slot 10 – ventola in Dry",
           "type_slot_11": "Tipo slot 11",
+          "dry_fan_slot_11": "Slot 11 – ventola in Dry",
           "type_slot_12": "Tipo slot 12",
+          "dry_fan_slot_12": "Slot 12 – ventola in Dry",
           "type_slot_13": "Tipo slot 13",
+          "dry_fan_slot_13": "Slot 13 – ventola in Dry",
           "type_slot_14": "Tipo slot 14",
-          "type_slot_15": "Tipo slot 15"
+          "dry_fan_slot_14": "Slot 14 – ventola in Dry",
+          "type_slot_15": "Tipo slot 15",
+          "dry_fan_slot_15": "Slot 15 – ventola in Dry"
         }
+      }
+    }
+  },
+  "selector": {
+    "dry_fan": {
+      "options": {
+        "all": "Tutte le velocità",
+        "low": "Solo bassa (l'unità blocca su bassa)"
       }
     }
   }

@@ -36,7 +36,7 @@ A Home Assistant custom integration for **Hitachi HC-A(8/16/64)MB ModBus gateway
 - On/Off, HVAC mode (Cool / Heat / Dry / Fan Only / Auto – per type)
 - Target temperature setpoint
 - Fan speed control (VRF/RAC only): `low` / `medium` / `high` / `auto`
-  (VRF units are fixed at `low` while in **Dry** mode)
+  (per-unit option for indoor units that pin the fan in **Dry** mode)
 - Current temperature (room inlet sensor for VRF/RAC; actual DHW tank temperature for ATW)
 - Extra state attributes: pipe temperatures, alarm code, valve opening, operation state
 
@@ -149,25 +149,38 @@ A copy of the relevant documentation pages is included in the [`Documentation/`]
 ### Fan speed in Dry mode
 
 PMML0351A documents no interaction between the mode and fan registers — offsets
-`4`/`5` are independent and the fan table always lists all five values. The
-restriction is indoor-unit behaviour, and it is stronger than the remote
-suggests. Measured on a VRF indoor unit, writing the fan command register:
+`4`/`5` are independent and the fan table always lists all five values. What
+happens in Dry is indoor-unit behaviour, and it is not consistent even within
+one unit type. Two VRF units on the same gateway, measured by writing the fan
+command register directly:
 
-| Mode | Written | Command reg. reads back | Status reg. |
-|---|---|---|---|
-| Cool | `1` (Medium) | `1` | `1` |
-| Cool | `2` (High) | `2` | `2` |
-| Dry | `1` (Medium) | **`0`** | **`0`** |
+| Unit | Mode | Written | Command reg. | Status reg. |
+|---|---|---|---|---|
+| Ou15 Iu1 | Cool | `1` (Medium) | `1` | `1` |
+| Ou15 Iu1 | Cool | `2` (High) | `2` | `2` |
+| Ou15 Iu1 | Dry | `1` (Medium) | **`0`** | **`0`** |
+| Ou0 Iu1 | Dry | `2` (High) | `2` | `2` |
 
-In Dry the unit pins the fan to Low and overwrites the register: even a raw
-Modbus write does not stick. The official remote still offers Low and Medium in
-Dry, but the Medium selection does not reach the gateway either.
+The first unit pins the fan to Low in Dry and overwrites the register — even a
+raw Modbus write does not stick, and its official remote's Medium selection
+never reaches the gateway either. The second dehumidifies at High quite happily.
+Nothing readable distinguishes them in advance.
 
-A VRF unit's fan list is therefore narrowed to `low` alone while it is in Dry,
-so the UI cannot offer a speed that silently reverts; `climate.set_fan_mode`
-raises for anything else. RAC and ATW units are unaffected. The *reported*
-speed is never hidden: if a unit reports a higher speed in Dry, that is what
-the state shows.
+It is therefore a **per-unit setting**, under
+**Configure → Slot N – fan in Dry mode**:
+
+| Value | Behaviour |
+|---|---|
+| `all` (default) | Offer every speed, like the official remote does |
+| `low` | This unit pins Low in Dry: offer only `low` there, so the UI never proposes a speed that silently reverts |
+
+Outside Dry the full list always applies, and RAC and ATW units are unaffected.
+The *reported* speed is never narrowed: whatever the unit says it is doing is
+what the state shows.
+
+To find out which setting a unit needs, put it in Dry, write a higher speed to
+its fan command register with `hitachi_modbus.write_register`, wait a few
+seconds and read it back — see the troubleshooting section for the addresses.
 
 ### A note on the "High2" fan speed
 
@@ -202,7 +215,7 @@ The **Hitachi Net Configurator** Java application (the official Windows tool for
 
 **A fan speed change is not reflected straight away**
 - The gateway relays the command to the indoor unit over H-LINK and only then mirrors it into the status registers, so the integration waits ~3 s after a write before re-reading. Until then the previous value is still shown.
-- If a speed never takes effect at all, check in this order: the unit is not in Dry (a VRF unit runs Dry at `low`, full stop — see above); the central lock register (offset `8`, bit 3 = Fan) is `0`; the log shows no `Hitachi gateway refused writing …` error.
+- If a speed never takes effect at all, check in this order: the unit is not one that pins the fan in Dry (see above — set **fan in Dry** to `low` for it); the central lock register (offset `8`, bit 3 = Fan) is `0`; the log shows no `Hitachi gateway refused writing …` error.
 - To check a register yourself, use `hitachi_modbus.read_register`. The address is `n_base + slot_id × 32 + offset` — for slot 5 with the default base that is `2000 + 160 + offset`, so the fan command is `2165` and the fan status is `2171`. The value appears as a persistent notification.
 
 **A unit behaves oddly / shows the wrong modes**

@@ -25,6 +25,10 @@ CONF_DISCOVERED_UNITS = "discovered_units"
 # slot ids are stored as strings.
 CONF_UNIT_TYPES = "unit_types"
 
+# entry.options key holding the per-slot Dry-mode fan behaviour, same shape:
+# {"<slot_id>": "all" | "low"}.  See FAN in Dry mode below.
+CONF_DRY_FAN = "dry_fan"
+
 # Defaults matching the HC-A16MB factory settings
 DEFAULT_PORT = 502
 DEFAULT_SLAVE_ID = 1
@@ -121,25 +125,32 @@ FAN_MODES_BY_TYPE: dict[str, list[str]] = {
     UNIT_TYPE_ATW: [],  # no fan control
 }
 
-# ── Fan speeds available in Dry mode ──────────────────────────────────────
+# ── Fan speed in Dry mode (per unit) ──────────────────────────────────────
 # PMML0351A rev.4 documents no interaction between the mode and fan registers:
 # offsets 4/5 (§5.2.1) are independent and the fan table always lists all five
-# values.  The restriction is indoor-unit behaviour, not a gateway rule.
+# values.  What happens in Dry is indoor-unit behaviour, and it is not even
+# consistent within one unit type — two VRF units on the same gateway differ:
 #
-# Measured on a VRF indoor unit (§5.2.1 slot, fan cmd offset 5 / status 11):
-#   Cool, write 1 (Medium) -> cmd 1, status 1      command honoured
-#   Cool, write 2 (High)   -> cmd 2, status 2      command honoured
-#   Dry,  write 1 (Medium) -> cmd 0, status 0      reset by the unit
-# In Dry the unit pins the fan to Low and overwrites the register, so even a
-# raw Modbus write does not stick.  Offering any other speed there would let
-# the user pick something that silently reverts, which is what the official
-# remote's own Low/Medium choice does too.
+#   Ou15 Iu1 : Dry, write 1 (Medium) -> cmd 0, status 0   reset by the unit
+#              Cool, write 1 / 2     -> honoured           so writes do work
+#   Ou0  Iu1 : Dry runs at High quite happily
 #
-# A unit type absent from this table keeps its full list.
+# A unit that pins the fan overwrites the register, so even a raw Modbus write
+# does not stick and there is nothing to read back that would tell us in
+# advance.  It is therefore a per-unit setting, chosen in the options flow.
+#
+#   DRY_FAN_ALL – offer every speed (default; matches the official remote,
+#                 which does not restrict the choice either)
+#   DRY_FAN_LOW – this unit pins Low in Dry, so offer only that instead of
+#                 letting the user pick a speed that silently reverts
 
-FAN_MODES_DRY_BY_TYPE: dict[str, list[str]] = {
-    UNIT_TYPE_VRF: ["low"],
-}
+DRY_FAN_ALL = "all"
+DRY_FAN_LOW = "low"
+DRY_FAN_OPTIONS = [DRY_FAN_ALL, DRY_FAN_LOW]
+DEFAULT_DRY_FAN = DRY_FAN_ALL
+
+# Speeds offered in Dry when a unit is set to DRY_FAN_LOW.
+FAN_MODES_DRY_LOW = ["low"]
 
 # ── Per-type temperature range ─────────────────────────────────────────────
 # ATW supplies water to a hydronic circuit; the useful range is wider.

@@ -12,6 +12,7 @@ from .modbus_compat import modbus_read, modbus_write
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.debounce import Debouncer
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .const import (
@@ -37,6 +38,12 @@ from .const import (
 )
 
 _LOGGER = logging.getLogger(__name__)
+
+# Seconds to wait before re-reading after a write.  A command written to the
+# gateway is relayed to the indoor unit over H-LINK and only then mirrored into
+# the status registers, so reading back immediately returns the previous value
+# and makes the UI snap back to it.
+POST_WRITE_REFRESH_DELAY = 3.0
 
 
 def _to_signed(val: int) -> int:
@@ -89,6 +96,15 @@ class HitachiModbusCoordinator(DataUpdateCoordinator[dict[int, list[int]]]):
             _LOGGER,
             name=DOMAIN,
             update_interval=timedelta(seconds=scan_interval),
+            # async_request_refresh() is called right after every write; delay
+            # it so the status registers have caught up, and coalesce a burst
+            # of writes (mode + fan + setpoint) into a single re-read.
+            request_refresh_debouncer=Debouncer(
+                hass,
+                _LOGGER,
+                cooldown=POST_WRITE_REFRESH_DELAY,
+                immediate=False,
+            ),
         )
 
     # ── Connection ─────────────────────────────────────────────────────────

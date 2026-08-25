@@ -37,6 +37,7 @@ from .const import (
     CONF_HOST,
     DOMAIN,
     FAN_MODES_BY_TYPE,
+    FAN_MODES_DRY_BY_TYPE,
     HA_FAN_TO_MODBUS,
     HA_MODE_TO_MODBUS,
     HVAC_MODES_BY_TYPE,
@@ -143,8 +144,11 @@ class HitachiClimateEntity(CoordinatorEntity[HitachiModbusCoordinator], ClimateE
         hvac_strs = HVAC_MODES_BY_TYPE[unit_type]
         self._attr_hvac_modes = [_STR_TO_HVAC[m] for m in hvac_strs]
 
+        # Full list of speeds this unit type can be set to, and the reduced
+        # list that applies while it is dehumidifying (see fan_modes).
         fan_list = FAN_MODES_BY_TYPE[unit_type]
-        self._attr_fan_modes = fan_list if fan_list else None
+        self._fan_modes: list[str] | None = fan_list or None
+        self._fan_modes_dry: list[str] | None = FAN_MODES_DRY_BY_TYPE.get(unit_type)
 
         temp_min, temp_max, temp_step = TEMP_RANGE_BY_TYPE[unit_type]
         self._attr_min_temp = temp_min
@@ -156,7 +160,7 @@ class HitachiClimateEntity(CoordinatorEntity[HitachiModbusCoordinator], ClimateE
             | ClimateEntityFeature.TURN_ON
             | ClimateEntityFeature.TURN_OFF
         )
-        if fan_list:
+        if self._fan_modes:
             features |= ClimateEntityFeature.FAN_MODE
         self._attr_supported_features = features
 
@@ -233,17 +237,32 @@ class HitachiClimateEntity(CoordinatorEntity[HitachiModbusCoordinator], ClimateE
         return _STR_TO_HVAC.get(ha_str, HVACMode.COOL)
 
     @property
+    def fan_modes(self) -> list[str] | None:
+        """Speeds that can be selected right now.
+
+        Dehumidification runs at reduced airflow: a VRF unit accepts the higher
+        speeds over Modbus but keeps the fan low, so offering them would let the
+        user pick a speed the unit silently ignores.  ClimateEntity validates
+        set_fan_mode against this list, so the restriction applies to service
+        calls as well as to the dropdown.
+        """
+        if self._fan_modes and self._fan_modes_dry and self.hvac_mode == HVACMode.DRY:
+            return self._fan_modes_dry
+        return self._fan_modes
+
+    @property
     def fan_mode(self) -> str | None:
-        if not self._attr_fan_modes:
+        if not self._fan_modes:
             return None
         val = self._reg(OFFSET_FAN_STATUS)
         if val is None:
             return None
         mode = MODBUS_TO_HA_FAN.get(val)
-        if mode not in self._attr_fan_modes:
-            # An unknown register value (or a speed this unit type does not
-            # expose) must not be published: HA rejects a fan_mode that is not
-            # in fan_modes and the entity would go into an error state.
+        if mode is None or mode not in self._fan_modes:
+            # Only genuinely unknown register values are withheld.  What the
+            # unit reports is always published otherwise, even when the current
+            # mode narrows the selectable list, so the state keeps showing the
+            # speed the unit is really running at.
             _LOGGER.debug(
                 "Slot %d reported unsupported fan register value %s",
                 self._slot_id,
@@ -355,7 +374,7 @@ class HitachiClimateEntity(CoordinatorEntity[HitachiModbusCoordinator], ClimateE
         )
 
     async def async_set_fan_mode(self, fan_mode: str) -> None:
-        if not self._attr_fan_modes:
+        if not self._fan_modes:
             return
         fan_mode = LEGACY_FAN_ALIASES.get(fan_mode, fan_mode)
         modbus_fan = HA_FAN_TO_MODBUS.get(fan_mode)

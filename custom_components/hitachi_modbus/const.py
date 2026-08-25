@@ -121,6 +121,19 @@ FAN_MODES_BY_TYPE: dict[str, list[str]] = {
     UNIT_TYPE_ATW: [],  # no fan control
 }
 
+# ── Fan speeds available in Dry mode ──────────────────────────────────────
+# PMML0351A rev.4 documents no interaction between the mode and fan registers:
+# offsets 4/5 (§5.2.1) are independent and the fan table always lists all five
+# values.  The restriction is indoor-unit behaviour, not a gateway rule.
+#
+# On VRF units dehumidification runs at reduced airflow and the official remote
+# offers only Low and Medium; the higher speeds are accepted over Modbus but
+# not carried out.  A unit type absent from this table keeps its full list.
+
+FAN_MODES_DRY_BY_TYPE: dict[str, list[str]] = {
+    UNIT_TYPE_VRF: ["low", "medium"],
+}
+
 # ── Per-type temperature range ─────────────────────────────────────────────
 # ATW supplies water to a hydronic circuit; the useful range is wider.
 # Format: (min °C, max °C, step °C)

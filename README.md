@@ -36,6 +36,7 @@ A Home Assistant custom integration for **Hitachi HC-A(8/16/64)MB ModBus gateway
 - On/Off, HVAC mode (Cool / Heat / Dry / Fan Only / Auto – per type)
 - Target temperature setpoint
 - Fan speed control (VRF/RAC only): `low` / `medium` / `high` / `auto`
+  (VRF units offer only `low` / `medium` while in **Dry** mode)
 - Current temperature (room inlet sensor for VRF/RAC; actual DHW tank temperature for ATW)
 - Extra state attributes: pipe temperatures, alarm code, valve opening, operation state
 
@@ -145,6 +146,19 @@ The register addresses and protocol details implemented in this integration are 
 
 A copy of the relevant documentation pages is included in the [`Documentation/`](Documentation/) folder of this repository.
 
+### Fan speeds in Dry mode
+
+PMML0351A documents no interaction between the mode and fan registers — offsets
+`4`/`5` are independent and the fan table always lists all five values. In
+practice a VRF indoor unit dehumidifies at reduced airflow: the official remote
+offers only **Low** and **Medium** in Dry, and the higher speeds are accepted
+over Modbus without being carried out.
+
+The integration therefore narrows a VRF unit's fan list to `low` / `medium`
+while it is in Dry, both in the dropdown and for `climate.set_fan_mode` service
+calls. RAC and ATW units are unaffected. The *reported* speed is never hidden:
+if a unit reports a higher speed in Dry, that is what the state shows.
+
 ### A note on the "High2" fan speed
 
 PMML0351A defines fan register value `3` as **High2** (also called *High H*), but
@@ -175,6 +189,10 @@ The **Hitachi Net Configurator** Java application (the official Windows tool for
 
 **The `high2` fan speed disappeared**
 - It was removed on purpose: see [A note on the "High2" fan speed](#a-note-on-the-high2-fan-speed) above. Selecting it never produced a different fan speed on RAC units.
+
+**A fan speed change is not reflected straight away**
+- The gateway relays the command to the indoor unit over H-LINK and only then mirrors it into the status registers, so the integration waits ~3 s after a write before re-reading. Until then the previous value is still shown.
+- If a speed never takes effect, check the unit is not in Dry (VRF units run Dry at `low`/`medium` only) and that the central lock register (offset `8`, bit 3 = Fan) is not blocking fan control.
 
 **A unit behaves oddly / shows the wrong modes**
 - Check its type under **Configure** – a RAC or ATW unit left as the default `vrf` exposes modes its hardware does not have. ATW units in particular need `atw`, or they are read from the wrong register space.
